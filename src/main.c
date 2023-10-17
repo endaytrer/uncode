@@ -23,7 +23,7 @@ activate (GtkApplication* app,
   g_signal_connect(gl_area, "unrealize", G_CALLBACK(unrealize), NULL);
   g_signal_connect(gl_area, "render", G_CALLBACK(render), NULL);
   gtk_window_set_child(GTK_WINDOW (window), gl_area);
-  gtk_widget_show(window);
+  gtk_window_present(GTK_WINDOW(window));
 }
 
 int

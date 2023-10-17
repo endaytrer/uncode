@@ -3,7 +3,7 @@
 #include <gtk/gtk.h>
 
 gboolean render(GtkGLArea *area, GdkGLContext *context);
-void realize(GtkGLArea *area) ;
+void realize(GtkGLArea *area);
 void unrealize(GtkGLArea *area);
 
 #endif // _RENDER_H

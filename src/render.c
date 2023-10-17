@@ -1,4 +1,5 @@
 #define GL_GLEXT_PROTOTYPES
+#include <GL/glew.h>
 #include <GL/gl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,11 +11,15 @@
 
 typedef struct {
     float pos[2];
+    float size[2];
+    float ch;
     float color[3];
 } Vertex;
 
 typedef enum {
     VERTEX_POS = 0,
+    VERTEX_SIZE,
+    VERTEX_CH,
     VERTEX_COLOR,
     VERTEX_ATTR_COUNT
 } VertexAttr;
@@ -28,6 +33,16 @@ static const struct {
         .size = sizeof(((Vertex*)NULL)->pos) / sizeof(float),
         .offset = offsetof(Vertex, pos),
     },
+    [VERTEX_SIZE] = 
+    {
+        .size = sizeof(((Vertex*)NULL)->size) / sizeof(float),
+        .offset = offsetof(Vertex, size),
+    },
+    [VERTEX_CH] = 
+    {
+        .size = sizeof(((Vertex*)NULL)->ch) / sizeof(float),
+        .offset = offsetof(Vertex, ch),
+    },
     [VERTEX_COLOR] = 
     {
         .size = sizeof(((Vertex*)NULL)->color) / sizeof(float),
@@ -35,7 +50,7 @@ static const struct {
     }
 };
 
-static_assert(VERTEX_ATTR_COUNT == 2, "unimplemented");
+static_assert(VERTEX_ATTR_COUNT == 4, "unimplemented");
 
 Vertex vertices[] = {
     {
@@ -87,6 +102,14 @@ void realize(GtkGLArea *area) {
     if (gtk_gl_area_get_error (area) != NULL)
         return;
 
+    if (glewInit() != GLEW_OK) {
+        fprintf(stderr, "Could not init glew!");
+        exit(-1);
+    }
+    int major, minor;
+    GdkGLContext *context = gtk_gl_area_get_context(area);
+    gdk_gl_context_get_version(context, &major, &minor);
+    printf("OpenGL Version: %d.%d\n", major, minor);
     // compile and link shader
     GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, (const char *)shaders_vert_glsl, (const int *)&shaders_vert_glsl_len);
     GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, (const char *)shaders_frag_glsl, (const int *)&shaders_frag_glsl_len);
@@ -122,6 +145,7 @@ void realize(GtkGLArea *area) {
 
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
+    
 
 }
 
@@ -164,7 +188,6 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     struct timeval time;
     gettimeofday(&time, NULL);
     glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
-    printf("%f\n", (float)time.tv_usec / 1000000 * G_PI * 2);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glFlush();
     gtk_gl_area_queue_render(area);
