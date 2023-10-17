@@ -2,7 +2,7 @@
 #include <gdk/gdk.h>
 
 #include "render.h"
-
+#include "editor.h"
 
 
 
