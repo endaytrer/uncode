@@ -15,10 +15,16 @@ static void activate (GtkApplication* app) {
 
 
     GtkWidget *gl_area = gtk_gl_area_new();
-    gtk_gl_area_set_auto_render(GTK_GL_AREA(gl_area), FALSE);
+
     g_signal_connect(gl_area, "realize", G_CALLBACK(realize), NULL);
     g_signal_connect(gl_area, "unrealize", G_CALLBACK(unrealize), NULL);
     g_signal_connect(gl_area, "render", G_CALLBACK(render), NULL);
+
+    GtkEventController *controller = gtk_event_controller_key_new();
+
+    g_signal_connect_object(controller, "key-pressed", G_CALLBACK(handle_key_press), gl_area, G_CONNECT_SWAPPED);
+    gtk_widget_add_controller(window, controller);
+
     gtk_window_set_child(GTK_WINDOW (window), gl_area);
     gtk_window_present(GTK_WINDOW(window));
 }

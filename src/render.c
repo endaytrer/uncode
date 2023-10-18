@@ -14,7 +14,8 @@ typedef enum {
     VERTEX_SIZE,
     VERTEX_UV_OFFSET_X,
     VERTEX_UV_SIZE,
-    VERTEX_COLOR,
+    VERTEX_FG_COLOR,
+    VERTEX_BG_COLOR,
     VERTEX_ATTR_COUNT
 } VertexAttr;
 
@@ -24,37 +25,50 @@ static const struct {
 } vertex_attr_param[VERTEX_ATTR_COUNT] = {
     [VERTEX_POS] = 
     {
-        .size = sizeof(((Vertex*)NULL)->pos) / sizeof(float),
-        .offset = offsetof(Vertex, pos),
+        .size = sizeof(((Glyph*)NULL)->pos) / sizeof(float),
+        .offset = offsetof(Glyph, pos),
     },
     [VERTEX_SIZE] = 
     {
-        .size = sizeof(((Vertex*)NULL)->size) / sizeof(float),
-        .offset = offsetof(Vertex, size),
+        .size = sizeof(((Glyph*)NULL)->size) / sizeof(float),
+        .offset = offsetof(Glyph, size),
     },
     [VERTEX_UV_OFFSET_X] = 
     {
-        .size = sizeof(((Vertex*)NULL)->uv_offset_x) / sizeof(float),
-        .offset = offsetof(Vertex, uv_offset_x),
+        .size = sizeof(((Glyph*)NULL)->uv_offset_x) / sizeof(float),
+        .offset = offsetof(Glyph, uv_offset_x),
     },
     [VERTEX_UV_SIZE] = 
     {
-        .size = sizeof(((Vertex*)NULL)->uv_size) / sizeof(float),
-        .offset = offsetof(Vertex, uv_size),
+        .size = sizeof(((Glyph*)NULL)->uv_size) / sizeof(float),
+        .offset = offsetof(Glyph, uv_size),
     },
-    [VERTEX_COLOR] = 
+    [VERTEX_FG_COLOR] = 
     {
-        .size = sizeof(((Vertex*)NULL)->color) / sizeof(float),
-        .offset = offsetof(Vertex, color),
+        .size = sizeof(((Glyph*)NULL)->fg_color) / sizeof(float),
+        .offset = offsetof(Glyph, fg_color),
+    },
+    [VERTEX_BG_COLOR] = 
+    {
+        .size = sizeof(((Glyph*)NULL)->bg_color) / sizeof(float),
+        .offset = offsetof(Glyph, bg_color),
     }
 };
 
-static_assert(VERTEX_ATTR_COUNT == 5, "unimplemented");
+static_assert(VERTEX_ATTR_COUNT == 6, "unimplemented");
 
-GLuint vao;
-GLuint vbo;
 GLuint font_tex;
-GLuint program;
+
+GLuint text_vao;
+GLuint text_vbo;
+
+GLuint text_program;
+
+GLuint cursor_vao;
+GLuint cursor_vbo;
+
+GLuint cursor_program;
+
 GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_length_p) {
     GLuint shader = glCreateShader(type);
     const char *source[] = {(const char *)shader_text};
@@ -102,45 +116,72 @@ void realize(GtkGLArea *area) {
 
     font_tex = freetype_init();
 
-    init_editor();
+    init_editor(&main_editor);
+    calculate(&main_editor);
+
     // compile and link shader
-    GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, (const char *)shaders_vert_glsl, (const int *)&shaders_vert_glsl_len);
-    GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, (const char *)shaders_frag_glsl, (const int *)&shaders_frag_glsl_len);
+    text_program = glCreateProgram();
+    GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, (const char *)shaders_text_vert_glsl, (const int *)&shaders_text_vert_glsl_len);
+    GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, (const char *)shaders_text_frag_glsl, (const int *)&shaders_text_frag_glsl_len);
     
-    program = glCreateProgram();
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
-    glLinkProgram(program);
+    glAttachShader(text_program, vertex_shader);
+    glAttachShader(text_program, fragment_shader);
+    glLinkProgram(text_program);
+
 
     GLint status;
-    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    glGetProgramiv(text_program, GL_LINK_STATUS, &status);
 
     if (status == GL_FALSE) {
         GLint max_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &max_length);
+        glGetProgramiv(text_program, GL_INFO_LOG_LENGTH, &max_length);
 
         char *error_log = malloc(max_length);
-        glGetProgramInfoLog(program, max_length, &max_length, error_log);
-        fprintf(stderr, "Cannot link program:\n%s\n", error_log);
+        glGetProgramInfoLog(text_program, max_length, &max_length, error_log);
+        fprintf(stderr, "Cannot link text_program:\n%s\n", error_log);
         free(error_log);
-        glDeleteProgram(program);
+        glDeleteProgram(text_program);
 
         glDeleteShader(vertex_shader);
         glDeleteShader(fragment_shader);
 
         exit(-1);
     }
-    glUseProgram(program);
+    glUseProgram(text_program);
 
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, calculated_character_size * sizeof(Vertex), calculated_characters, GL_DYNAMIC_DRAW);
-
-
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    glGenBuffers(1, &text_vbo);
+    glGenVertexArrays(1, &text_vao);
 
 
+    cursor_program = glCreateProgram();
+    vertex_shader = compile_shader(GL_VERTEX_SHADER, (const char *)shaders_cursor_vert_glsl, (const int *)&shaders_cursor_vert_glsl_len);
+    fragment_shader = compile_shader(GL_FRAGMENT_SHADER, (const char *)shaders_cursor_frag_glsl, (const int *)&shaders_cursor_frag_glsl_len);
+    
+    glAttachShader(cursor_program, vertex_shader);
+    glAttachShader(cursor_program, fragment_shader);
+    glLinkProgram(cursor_program);
+
+    glGetProgramiv(cursor_program, GL_LINK_STATUS, &status);
+
+    if (status == GL_FALSE) {
+        GLint max_length = 0;
+        glGetProgramiv(cursor_program, GL_INFO_LOG_LENGTH, &max_length);
+
+        char *error_log = malloc(max_length);
+        glGetProgramInfoLog(cursor_program, max_length, &max_length, error_log);
+        fprintf(stderr, "Cannot link cursor_program:\n%s\n", error_log);
+        free(error_log);
+        glDeleteProgram(cursor_program);
+
+        glDeleteShader(vertex_shader);
+        glDeleteShader(fragment_shader);
+
+        exit(-1);
+    }
+    glUseProgram(cursor_program);
+
+    glGenBuffers(1, &cursor_vbo);
+    glGenVertexArrays(1, &cursor_vao);
 }
 
 void unrealize(GtkGLArea *area) {
@@ -149,8 +190,11 @@ void unrealize(GtkGLArea *area) {
     if (gtk_gl_area_get_error (area) != NULL)
         return;
 
-    glDeleteBuffers(1, &vbo);
-    glDeleteProgram(program);
+    glDeleteBuffers(1, &text_vbo);
+    glDeleteProgram(text_program);
+
+    glDeleteBuffers(1, &cursor_vbo);
+    glDeleteProgram(cursor_program);
 }
 
 gboolean render(GtkGLArea *area, GdkGLContext *context) {
@@ -160,40 +204,66 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glBindVertexArray(vao);
+    struct timeval time;
+    gettimeofday(&time, NULL);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glUseProgram(text_program);
+    glBindVertexArray(text_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, text_vbo);
+    glBufferData(GL_ARRAY_BUFFER, calculated_character_size * sizeof(Glyph), calculated_characters, GL_DYNAMIC_DRAW);
     for (VertexAttr attr = VERTEX_POS; attr < VERTEX_ATTR_COUNT; attr++) {
         glVertexAttribPointer(attr,
             vertex_attr_param[attr].size,
             GL_FLOAT,
             GL_FALSE,
-            sizeof(Vertex),
+            sizeof(Glyph),
             (void *)vertex_attr_param[attr].offset);
         glEnableVertexAttribArray(attr);
         glVertexAttribDivisor(attr, 1);
     }
-    // GLint posAttrib = glGetAttribLocation(program, "position");
-    // glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, NULL);
 
-    // glEnableVertexAttribArray(posAttrib);
     // uniforms
-    GLint uniformTime = glGetUniformLocation(program, "time");
-    struct timeval time;
-    gettimeofday(&time, NULL);
+    GLint uniformTime = glGetUniformLocation(text_program, "time");
     glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
 
-    GLint uniformResolution = glGetUniformLocation(program, "resolution");
+    GLint uniformResolution = glGetUniformLocation(text_program, "resolution");
     glUniform2f(uniformResolution, gtk_widget_get_width(GTK_WIDGET(area)), gtk_widget_get_height(GTK_WIDGET(area)));
 
     glBindTexture(GL_TEXTURE_2D, font_tex);
-    GLuint uniformFont = glGetUniformLocation(program, "font");
+    GLuint uniformFont = glGetUniformLocation(text_program, "font");
     glUniform1i(uniformFont, FONT_TEXTURE - GL_TEXTURE0);
     
-
-    glDrawArrays(GL_TRIANGLES, 0, 3);
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, calculated_character_size);
+
+    // draw cursor
+    glUseProgram(cursor_program);
+
+    glBindVertexArray(cursor_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cursor_vbo);
+    glBufferData(GL_ARRAY_BUFFER, num_cursors * sizeof(Cursor), cursors, GL_DYNAMIC_DRAW);
+
+    // cursor attribs
+    GLint posAttrib = glGetAttribLocation(cursor_program, "position");
+    glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Cursor), NULL);
+    glEnableVertexAttribArray(posAttrib);
+    glVertexAttribDivisor(posAttrib, 1);
+
+    // uniforms: time, resolution, color, size
+    uniformTime = glGetUniformLocation(cursor_program, "time");
+    glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
+
+    uniformResolution = glGetUniformLocation(cursor_program, "resolution");
+    glUniform2f(uniformResolution, gtk_widget_get_width(GTK_WIDGET(area)), gtk_widget_get_height(GTK_WIDGET(area)));
+
+    GLuint uniformColor = glGetUniformLocation(cursor_program, "color");
+    glUniform4f(uniformColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);
+    
+    GLuint uniformSize = glGetUniformLocation(cursor_program, "size");
+    glUniform2f(uniformSize, cursor_size[0], cursor_size[1]);
+
+    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_cursors);
+    
     glFlush();
-    gtk_gl_area_queue_render(area);
     return TRUE;
 }

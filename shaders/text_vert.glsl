@@ -4,10 +4,12 @@ layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 size;
 layout(location = 2) in float uv_offset_x;
 layout(location = 3) in vec2 uv_size;
-layout(location = 4) in vec3 color;
+layout(location = 4) in vec3 fg_color;
+layout(location = 5) in vec3 bg_color;
 
 uniform vec2 resolution;
-out vec4 frag_color;
+out vec4 frag_fg_color;
+out vec4 frag_bg_color;
 out vec2 uv;
 void main() {
     vec2 vert_position = position;
@@ -21,5 +23,6 @@ void main() {
         uv.y += uv_size.y;
     }
     gl_Position = vec4(2.0 * vert_position.x / resolution.x - 1.0, 1.0 - 2.0 * vert_position.y / resolution.y, 0.0, 1.0);
-    frag_color = vec4(color, 1.0);
+    frag_fg_color = vec4(fg_color, 1.0);
+    frag_bg_color = vec4(bg_color, 1.0);
 }

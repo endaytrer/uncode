@@ -23,7 +23,7 @@ GLuint freetype_init(void) {
     // put ascii printable character into a altas.
     // first, get size
     unsigned int width = 0, height = 0;
-    for (int c = 0; c <= UCHAR_MAX; c++) {
+    for (int c = 32; c <= UCHAR_MAX; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             fprintf(stderr, "Could not load char %d\n", c);
             continue;
@@ -49,7 +49,7 @@ GLuint freetype_init(void) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, 0);
 
     unsigned int temp_offset = 0;
-    for (int c = 0; c <= UCHAR_MAX; c++) {
+    for (int c = 32; c <= UCHAR_MAX; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             continue;
         }
