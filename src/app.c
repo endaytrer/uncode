@@ -8,10 +8,10 @@
 
 
 struct _UncodeApp {
-    GtkApplication parent;
+    AdwApplication parent;
 };
 
-G_DEFINE_TYPE(UncodeApp, uncode_app, GTK_TYPE_APPLICATION);
+G_DEFINE_TYPE(UncodeApp, uncode_app, ADW_TYPE_APPLICATION);
 
 static void uncode_app_init(UncodeApp *app) {
 

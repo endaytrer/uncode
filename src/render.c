@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <sys/time.h>
 #include "render.h"
 #include "shaders.h"
 #include "freetype.h"
@@ -69,6 +68,8 @@ GLuint cursor_vbo;
 
 GLuint cursor_program;
 
+time_t start_sec;
+float last_edit;
 GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_length_p) {
     GLuint shader = glCreateShader(type);
     const char *source[] = {(const char *)shader_text};
@@ -92,7 +93,9 @@ GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_le
     return shader;
 }
 
-
+void update(GdkFrameClock *self, GtkGLArea *area) {
+    gtk_gl_area_queue_render(area);
+}
 
 void realize(GtkGLArea *area) {
     gtk_gl_area_make_current(area);
@@ -182,6 +185,14 @@ void realize(GtkGLArea *area) {
 
     glGenBuffers(1, &cursor_vbo);
     glGenVertexArrays(1, &cursor_vao);
+
+    struct timeval start_time;
+    gettimeofday(&start_time, NULL);
+    start_sec = start_time.tv_sec;
+    
+    GdkFrameClock *frame_clock = gtk_widget_get_frame_clock(GTK_WIDGET(area));
+    gdk_frame_clock_begin_updating(frame_clock);
+    g_signal_connect(frame_clock, "update", G_CALLBACK(update), area);
 }
 
 void unrealize(GtkGLArea *area) {
@@ -189,6 +200,10 @@ void unrealize(GtkGLArea *area) {
 
     if (gtk_gl_area_get_error (area) != NULL)
         return;
+
+
+    GdkFrameClock *frame_clock = gtk_widget_get_frame_clock(GTK_WIDGET(area));
+    gdk_frame_clock_end_updating(frame_clock);
 
     glDeleteBuffers(1, &text_vbo);
     glDeleteProgram(text_program);
@@ -209,6 +224,7 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
 
     struct timeval time;
     gettimeofday(&time, NULL);
+    time.tv_sec -= start_sec;
 
     glUseProgram(text_program);
     glBindVertexArray(text_vao);
@@ -228,7 +244,7 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
 
     // uniforms
     GLint uniformTime = glGetUniformLocation(text_program, "time");
-    glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
+    glUniform1f(uniformTime, (float)time.tv_usec / 1000000 + time.tv_sec);
 
     GLint uniformResolution = glGetUniformLocation(text_program, "resolution");
     glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
@@ -258,7 +274,7 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
 
         // uniforms: time, resolution, color, size
         uniformTime = glGetUniformLocation(cursor_program, "time");
-        glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
+        glUniform1f(uniformTime, (float)time.tv_usec / 1000000 + time.tv_sec - last_edit);
 
         uniformResolution = glGetUniformLocation(cursor_program, "resolution");
         glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
@@ -274,6 +290,8 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
 
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_cursors);
     }
+
     glFlush();
+    gtk_gl_area_queue_render(area);
     return TRUE;
 }

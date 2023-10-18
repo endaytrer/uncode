@@ -1,7 +1,7 @@
 CC = gcc
 LD = gcc
 
-DEPS := gtk4 gl glew freetype2
+DEPS := libadwaita-1 gtk4 gl glew freetype2
 
 CFLAGS := -std=c11 -Wall -Wextra -g -O2
 CFLAGS += $(shell pkg-config --cflags $(DEPS))

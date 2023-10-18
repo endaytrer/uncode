@@ -1,6 +1,8 @@
 #ifndef _RENDER_H
 #define _RENDER_H
 #include <gtk/gtk.h>
+#include <sys/time.h>
+
 #define CHAR_CAPACITY 65536
 #define MAX_CURSORS 1
 typedef struct {
@@ -29,6 +31,8 @@ extern float cursor_color[4];
 // viewport
 extern int viewport_size[2];
 extern float viewport_pos[2];
+extern time_t start_sec;
+extern float last_edit;
 
 gboolean render(GtkGLArea *area, GdkGLContext *context);
 void realize(GtkGLArea *area);

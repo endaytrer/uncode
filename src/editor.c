@@ -36,6 +36,7 @@ extern char *filename;
 void init_editor(Editor *editor, char *file) {
     if (!file) {
         char word[] = "";
+        if (editor->text) free(editor->text);
         editor->text = malloc(sizeof(word));
         editor->size = sizeof(word);
         editor->capacity = sizeof(word);
@@ -56,6 +57,7 @@ void init_editor(Editor *editor, char *file) {
             fprintf(stderr, "mmap\n");
             exit(-1);
         }
+        if (editor->text) free(editor->text);
         editor->text = malloc(s.st_size + 1);
         editor->size = s.st_size + 1;
         editor->capacity = s.st_size + 1;
@@ -96,8 +98,11 @@ void get_cursor_pos(Editor *editor, float *x, float *y) {
         *x += char_params[(size_t)ch].advance_x;
     }
 }
+bool layout_updated = true;
 
 void calculate(Editor *editor) {
+    if (!layout_updated) return;
+    layout_updated = false;
     calculated_character_size = 0;
     num_cursors = 0;
     unsigned int accumulated_width = 0, accumulated_height = 0;
@@ -364,6 +369,14 @@ gboolean handle_key_press(GtkGLArea *area,
             else
                 return TRUE;
     }
+    layout_updated = true;
+    
+
+    struct timeval time;
+    gettimeofday(&time, NULL);
+    time.tv_sec -= start_sec;
+    last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
+
     gtk_gl_area_queue_render(area);
     return TRUE;
 }

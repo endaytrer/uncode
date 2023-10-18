@@ -7,7 +7,7 @@
 #include <GL/gl.h>
 
 
-#define FONT "fonts/NotoSans-Regular.ttf"
+#define FONT "fonts/NotoSansMono-Regular.ttf"
 #define FONT_SIZE_PT 12
 #define PPI 150
 #define FONT_TEXTURE GL_TEXTURE0
