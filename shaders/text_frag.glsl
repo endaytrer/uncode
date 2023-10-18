@@ -14,7 +14,7 @@ vec3 hsv2rgb(vec3 hsv) {
 void main() {
     float offset = gl_FragCoord.x - gl_FragCoord.y;
     float omega = 1, k = 0.002;
-    vec3 color = hsv2rgb(vec3((sin(omega * time - k * offset) + 1.0) / 2.0, 0.6, 1.0));
+    vec3 color = hsv2rgb(vec3((sin(omega * time - k * offset) + 1.0) / 2.0, 0.4, 1.0));
     float alpha = texture(font, uv).r;
     gl_FragColor = vec4(frag_fg_color * color * alpha + frag_bg_color * (1.0 - alpha), 1.0);
 }

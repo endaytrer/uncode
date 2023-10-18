@@ -4,7 +4,7 @@
 #include <gtk/gtk.h>
 #define MAX_LINES 4095
 #define CURSOR_WIDTH 2
-#define BG_COLOR {0.0, 0.0, 0.0}
+#define BG_COLOR {0.15, 0.15, 0.15}
 #define FG_COLOR {1.0, 1.0, 1.0}
 #define TAB_SIZE 4
 typedef struct {

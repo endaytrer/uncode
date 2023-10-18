@@ -219,7 +219,8 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     viewport_size[1] = gtk_widget_get_height(GTK_WIDGET(area));
     calculate(&main_editor);
 
-    glClearColor(0.0, 0.0, 0.0, 1.0);
+    const float bg_color[] = BG_COLOR;
+    glClearColor(bg_color[0], bg_color[1], bg_color[2], 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     struct timeval time;
@@ -282,8 +283,12 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
         uniformViewportPos = glGetUniformLocation(cursor_program, "viewport_pos");
         glUniform2f(uniformViewportPos, viewport_pos[0], viewport_pos[1]);
 
-        GLuint uniformColor = glGetUniformLocation(cursor_program, "color");
-        glUniform4f(uniformColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);
+        GLuint uniformFgColor = glGetUniformLocation(cursor_program, "fg_color");
+        glUniform4f(uniformFgColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);
+
+        const float bg_color[] = BG_COLOR;
+        GLuint uniformBgColor = glGetUniformLocation(cursor_program, "bg_color");
+        glUniform4f(uniformBgColor, bg_color[0], bg_color[1], bg_color[2], 1.0);
 
         GLuint uniformSize = glGetUniformLocation(cursor_program, "size");
         glUniform2f(uniformSize, cursor_size[0], cursor_size[1]);
