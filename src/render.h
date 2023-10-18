@@ -25,6 +25,11 @@ extern float cursor_size[2];
 extern float cursor_color[4];
 // TODO: multiple cursor support
 
+
+// viewport
+extern int viewport_size[2];
+extern float viewport_pos[2];
+
 gboolean render(GtkGLArea *area, GdkGLContext *context);
 void realize(GtkGLArea *area);
 void unrealize(GtkGLArea *area);

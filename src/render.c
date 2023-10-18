@@ -100,6 +100,7 @@ void realize(GtkGLArea *area) {
     if (gtk_gl_area_get_error (area) != NULL)
         return;
 
+    
     if (glewInit() != GLEW_OK) {
         fprintf(stderr, "Could not init glew!");
         exit(-1);
@@ -116,8 +117,7 @@ void realize(GtkGLArea *area) {
 
     font_tex = freetype_init();
 
-    init_editor(&main_editor);
-    calculate(&main_editor);
+    // init_editor(&main_editor);
 
     // compile and link shader
     text_program = glCreateProgram();
@@ -200,7 +200,10 @@ void unrealize(GtkGLArea *area) {
 gboolean render(GtkGLArea *area, GdkGLContext *context) {
     if (gtk_gl_area_get_error(area) != NULL) 
         return FALSE;
-    
+    viewport_size[0] = gtk_widget_get_width(GTK_WIDGET(area));
+    viewport_size[1] = gtk_widget_get_height(GTK_WIDGET(area));
+    calculate(&main_editor);
+
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -228,42 +231,49 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
 
     GLint uniformResolution = glGetUniformLocation(text_program, "resolution");
-    glUniform2f(uniformResolution, gtk_widget_get_width(GTK_WIDGET(area)), gtk_widget_get_height(GTK_WIDGET(area)));
+    glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
+
+    GLint uniformViewportPos = glGetUniformLocation(text_program, "viewport_pos");
+    glUniform2f(uniformViewportPos, viewport_pos[0], viewport_pos[1]);
 
     glBindTexture(GL_TEXTURE_2D, font_tex);
     GLuint uniformFont = glGetUniformLocation(text_program, "font");
     glUniform1i(uniformFont, FONT_TEXTURE - GL_TEXTURE0);
     
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, calculated_character_size);
-
+    
     // draw cursor
-    glUseProgram(cursor_program);
+    if (num_cursors > 0) {
+        glUseProgram(cursor_program);
 
-    glBindVertexArray(cursor_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, cursor_vbo);
-    glBufferData(GL_ARRAY_BUFFER, num_cursors * sizeof(Cursor), cursors, GL_DYNAMIC_DRAW);
+        glBindVertexArray(cursor_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, cursor_vbo);
+        glBufferData(GL_ARRAY_BUFFER, num_cursors * sizeof(Cursor), cursors, GL_DYNAMIC_DRAW);
 
-    // cursor attribs
-    GLint posAttrib = glGetAttribLocation(cursor_program, "position");
-    glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Cursor), NULL);
-    glEnableVertexAttribArray(posAttrib);
-    glVertexAttribDivisor(posAttrib, 1);
+        // cursor attribs
+        GLint posAttrib = glGetAttribLocation(cursor_program, "position");
+        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Cursor), NULL);
+        glEnableVertexAttribArray(posAttrib);
+        glVertexAttribDivisor(posAttrib, 1);
 
-    // uniforms: time, resolution, color, size
-    uniformTime = glGetUniformLocation(cursor_program, "time");
-    glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
+        // uniforms: time, resolution, color, size
+        uniformTime = glGetUniformLocation(cursor_program, "time");
+        glUniform1f(uniformTime, (float)time.tv_usec / 1000000 * G_PI * 2);
 
-    uniformResolution = glGetUniformLocation(cursor_program, "resolution");
-    glUniform2f(uniformResolution, gtk_widget_get_width(GTK_WIDGET(area)), gtk_widget_get_height(GTK_WIDGET(area)));
+        uniformResolution = glGetUniformLocation(cursor_program, "resolution");
+        glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
 
-    GLuint uniformColor = glGetUniformLocation(cursor_program, "color");
-    glUniform4f(uniformColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);
-    
-    GLuint uniformSize = glGetUniformLocation(cursor_program, "size");
-    glUniform2f(uniformSize, cursor_size[0], cursor_size[1]);
+        uniformViewportPos = glGetUniformLocation(cursor_program, "viewport_pos");
+        glUniform2f(uniformViewportPos, viewport_pos[0], viewport_pos[1]);
 
-    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_cursors);
-    
+        GLuint uniformColor = glGetUniformLocation(cursor_program, "color");
+        glUniform4f(uniformColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);
+
+        GLuint uniformSize = glGetUniformLocation(cursor_program, "size");
+        glUniform2f(uniformSize, cursor_size[0], cursor_size[1]);
+
+        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_cursors);
+    }
     glFlush();
     return TRUE;
 }

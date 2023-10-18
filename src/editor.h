@@ -22,7 +22,7 @@ typedef struct {
 
 extern Editor main_editor;
 
-void init_editor(Editor *editor);
+void init_editor(Editor *editor, char *file);
 void calculate(Editor *editor);
 gboolean handle_key_press(GtkGLArea *area,
                       guint keyval,

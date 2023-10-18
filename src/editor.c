@@ -1,4 +1,7 @@
 #include <assert.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "editor.h"
 #include "render.h"
@@ -8,19 +11,61 @@ size_t calculated_character_size = 0;
 
 Cursor cursors[MAX_CURSORS];
 size_t num_cursors = 1;
-float cursor_size[2];
+
+static const int line_height = (FONT_SIZE_PT * PPI) >> 6;
+
+float cursor_size[2] = {CURSOR_WIDTH, line_height};
 float cursor_color[4] = {0.8, 0.9, 1.0, 1.0};
 
-Editor main_editor;
+int viewport_size[2];
+float viewport_pos[2] = {0, 0};
 
-void init_editor(Editor *editor) {
-    char word[] = "";
-    editor->text = malloc(sizeof(word));
-    editor->size = sizeof(word);
-    editor->capacity = sizeof(word);
+Editor main_editor = {
+    .text = 0,
+    .size = 0, // including trailing '\0'
+    .capacity = 0,
+
+    .cursor_x = 0,
+    .cursor_y = 0,
+
+    .line_start = {0},
+    .num_lines = 0,
+
+};
+extern char *filename;
+void init_editor(Editor *editor, char *file) {
+    if (!file) {
+        char word[] = "";
+        editor->text = malloc(sizeof(word));
+        editor->size = sizeof(word);
+        editor->capacity = sizeof(word);
+        memcpy(editor->text, word, sizeof(word));
+    } else {
+        int fd;
+        if ((fd = open(file, O_RDONLY)) < 0) {
+            fprintf(stderr, "cannot open file %s\n", file);
+            exit(-1);
+        }
+        struct stat s;
+        if (fstat(fd, &s) < 0) {
+            fprintf(stderr, "fstat\n");
+            exit(-1);
+        }
+        void *map;
+        if ((map = mmap(NULL, s.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) == MAP_FAILED) {
+            fprintf(stderr, "mmap\n");
+            exit(-1);
+        }
+        editor->text = malloc(s.st_size + 1);
+        editor->size = s.st_size + 1;
+        editor->capacity = s.st_size + 1;
+        memcpy(editor->text, map, s.st_size);
+        editor->text[s.st_size] = '\0';
+        munmap(map, s.st_size);
+        close(fd);
+    }
     editor->cursor_x = 0;
     editor->cursor_y = 0;
-    memcpy(editor->text, word, sizeof(word));
 
     // build line buffer
     editor->num_lines = 0;
@@ -30,6 +75,7 @@ void init_editor(Editor *editor) {
             editor->line_start[++editor->num_lines] = i + 1;
     }
 }
+
 size_t get_cursor_index(Editor *editor) {
     assert(editor->cursor_y < editor->num_lines);
 
@@ -39,16 +85,39 @@ size_t get_cursor_index(Editor *editor) {
     return line_start + editor->cursor_x;
 }
 
+
+void get_cursor_pos(Editor *editor, float *x, float *y) {
+    *y = editor->cursor_y * line_height + 5;
+    size_t line_start = editor->line_start[editor->cursor_y];
+    size_t effective_left = get_cursor_index(editor) - line_start;
+    *x = 0;
+    for (size_t i = 0; i < effective_left; i++) {
+        char ch = editor->text[line_start + i];
+        *x += char_params[(size_t)ch].advance_x;
+    }
+}
+
 void calculate(Editor *editor) {
     calculated_character_size = 0;
+    num_cursors = 0;
     unsigned int accumulated_width = 0, accumulated_height = 0;
-    int line_height = (FONT_SIZE_PT * PPI) >> 6;
     int letter_spacing = 0;
     cursor_size[0] = CURSOR_WIDTH;
     cursor_size[1] = line_height;
+    if (editor->size == 0) return;
+    size_t cursor_index = get_cursor_index(editor);
+
+    get_cursor_pos(editor, cursors[0].pos, cursors[0].pos + 1);
+    if (cursors[0].pos[0] <= viewport_pos[0] + viewport_size[0] &&
+        cursors[0].pos[0] + cursor_size[0] >= viewport_pos[0] &&
+        cursors[0].pos[1] <= viewport_pos[1] + viewport_size[1] &&
+        cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1]) {
+        num_cursors = 1;
+    }
+
     for (size_t i = 0; i < editor->size; ++i) {
         size_t index = (size_t) editor->text[i];
-
+        
         calculated_characters[calculated_character_size] = (Glyph) {
             .uv_offset_x = char_params[index].offset,
             .uv_size = {char_params[index].uv_width, char_params[index].uv_height},
@@ -58,25 +127,46 @@ void calculate(Editor *editor) {
             .fg_color = FG_COLOR
         };
 
-        if (get_cursor_index(editor) == i) {
-            cursors[0].pos[0] = accumulated_width;
-            cursors[0].pos[1] = accumulated_height + 5;
-        }
-
-        calculated_character_size++;
         if (editor->text[i] == '\n') {
             accumulated_height += line_height;
             accumulated_width = 0;
             continue;
         }
         accumulated_width += char_params[index].advance_x + letter_spacing;
+
+        // if out of bound, don't render it
+        if (calculated_characters[calculated_character_size].pos[0] > viewport_pos[0] + viewport_size[0] ||
+            calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] ||
+            calculated_characters[calculated_character_size].pos[1] > viewport_pos[1] + viewport_size[1] ||
+            calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1]
+            ) {
+                continue;
+        }
+
+        calculated_character_size++;
+        assert(calculated_character_size <= CHAR_CAPACITY);
     }
+}
+void adjust_screen(Editor *editor) {
+    float x, y;
+    get_cursor_pos(editor, &x, &y);
+    if (x < viewport_pos[0])
+        viewport_pos[0] = x;
+    if (x + cursor_size[0] > viewport_pos[0] + viewport_size[0])
+        viewport_pos[0] = x + cursor_size[0] - viewport_size[0];
+        
+    if (y < viewport_pos[1])
+        viewport_pos[1] = y;
+    if (y + cursor_size[1] > viewport_pos[1] + viewport_size[1])
+        viewport_pos[1] = y + cursor_size[1] - viewport_size[1];
 }
 void cursor_up(Editor *editor) {
     if (editor->cursor_y == 0)
         editor->cursor_x = 0;
     else
         editor->cursor_y -= 1;
+
+    adjust_screen(editor);
 }
 void cursor_down(Editor *editor) {
     if (editor->cursor_y == editor->num_lines - 1) {
@@ -85,6 +175,8 @@ void cursor_down(Editor *editor) {
         editor->cursor_x = line_size - 1;
     } else
         editor->cursor_y += 1;
+
+    adjust_screen(editor);
 }
 void cursor_left(Editor *editor) {
     size_t line_start = editor->line_start[editor->cursor_y];
@@ -102,6 +194,8 @@ void cursor_left(Editor *editor) {
             editor->cursor_x--;
         }
     }
+
+    adjust_screen(editor);
 }
 void cursor_right(Editor *editor) {
     size_t line_start = editor->line_start[editor->cursor_y];
@@ -112,16 +206,19 @@ void cursor_right(Editor *editor) {
     } else if (editor->cursor_x < line_size - 1 && line_size > 1) {
         editor->cursor_x++;
     }
+    adjust_screen(editor);
 }
 
 void cursor_home(Editor *editor) {
     editor->cursor_x = 0;
+    adjust_screen(editor);
 }
 
 void cursor_end(Editor *editor) {
     size_t line_start = editor->line_start[editor->cursor_y];
     size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
     editor->cursor_x = line_size - 1;
+    adjust_screen(editor);
 }
 
 void insert(Editor *e, char ch) {
@@ -151,6 +248,7 @@ void insert(Editor *e, char ch) {
     } else {
         e->cursor_x = pos - e->line_start[e->cursor_y] + 1;
     }
+    adjust_screen(e);
 }
 void delete(Editor *e) {
     size_t pos = get_cursor_index(e);
@@ -201,6 +299,7 @@ void backspace(Editor *e) {
     } else {
         e->cursor_x--;
     }
+    adjust_screen(e);
 }
 
 void insert_spaces(Editor *editor) {
@@ -218,6 +317,7 @@ gboolean handle_key_press(GtkGLArea *area,
     if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) {
         return FALSE;
     }
+
     switch (keyval) {
         case GDK_KEY_Up:
             cursor_up(&main_editor);
@@ -264,7 +364,6 @@ gboolean handle_key_press(GtkGLArea *area,
             else
                 return TRUE;
     }
-    calculate(&main_editor);
     gtk_gl_area_queue_render(area);
     return TRUE;
 }

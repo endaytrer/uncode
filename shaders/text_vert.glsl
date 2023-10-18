@@ -8,6 +8,7 @@ layout(location = 4) in vec3 fg_color;
 layout(location = 5) in vec3 bg_color;
 
 uniform vec2 resolution;
+uniform vec2 viewport_pos;
 out vec4 frag_fg_color;
 out vec4 frag_bg_color;
 out vec2 uv;
@@ -22,7 +23,7 @@ void main() {
         vert_position += vec2(0.0, size.y);
         uv.y += uv_size.y;
     }
-    gl_Position = vec4(2.0 * vert_position.x / resolution.x - 1.0, 1.0 - 2.0 * vert_position.y / resolution.y, 0.0, 1.0);
+    gl_Position = vec4(2.0 * (vert_position.x - viewport_pos.x) / resolution.x - 1.0, 1.0 - 2.0 * (vert_position.y - viewport_pos.y) / resolution.y, 0.0, 1.0);
     frag_fg_color = vec4(fg_color, 1.0);
     frag_bg_color = vec4(bg_color, 1.0);
 }
