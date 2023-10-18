@@ -18,8 +18,12 @@ float cursor_size[2] = {CURSOR_WIDTH, line_height};
 float cursor_color[4] = {0.8, 0.9, 1.0, 1.0};
 
 int viewport_size[2];
-float viewport_pos[2] = {0, 0};
+int prev_viewport_size_hash = 0;
 
+int hash_size(void) {
+    return viewport_size[0] * 28367 + viewport_size[1];
+}
+float viewport_pos[2] = {0, 0};
 Editor main_editor = {
     .text = 0,
     .size = 0, // including trailing '\0'
@@ -101,8 +105,10 @@ void get_cursor_pos(Editor *editor, float *x, float *y) {
 bool layout_updated = true;
 
 void calculate(Editor *editor) {
-    if (!layout_updated) return;
+    int hash = hash_size();
+    if (!layout_updated && hash == prev_viewport_size_hash) return;
     layout_updated = false;
+    prev_viewport_size_hash = hash;
     calculated_character_size = 0;
     num_cursors = 0;
     unsigned int accumulated_width = 0, accumulated_height = 0;
