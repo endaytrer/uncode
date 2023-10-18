@@ -2,10 +2,11 @@
 #define _EDITOR_H
 #include <stddef.h>
 #include <gtk/gtk.h>
-#define MAX_LINES 4096
+#define MAX_LINES 4095
 #define CURSOR_WIDTH 2
 #define BG_COLOR {0.0, 0.0, 0.0}
 #define FG_COLOR {1.0, 1.0, 1.0}
+#define TAB_SIZE 4
 typedef struct {
     char *text;
     size_t size; // including trailing '\0'
@@ -14,7 +15,7 @@ typedef struct {
     size_t cursor_x;
     size_t cursor_y;
 
-    size_t line_start[MAX_LINES];
+    size_t line_start[MAX_LINES + 1];
     size_t num_lines;
 
 } Editor;

@@ -6,7 +6,7 @@
 
 
 
-static void activate (GtkApplication* app) {
+static void activate(GtkApplication* app) {
     GtkWidget *window;
 
     window = gtk_application_window_new (app);
@@ -29,7 +29,7 @@ static void activate (GtkApplication* app) {
     gtk_window_present(GTK_WINDOW(window));
 }
 
-int main (int argc, char **argv){
+int main(int argc, char **argv){
     GtkApplication *app;
     int status;
 

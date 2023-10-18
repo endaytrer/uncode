@@ -14,7 +14,7 @@ float cursor_color[4] = {0.8, 0.9, 1.0, 1.0};
 Editor main_editor;
 
 void init_editor(Editor *editor) {
-    char word[] = "#include <stdio.h>\n\nint main() {\n    printf(\"The quick brown fox jumps over the lazy dog.\\n\");\n    return 0;\n}";
+    char word[] = "";
     editor->text = malloc(sizeof(word));
     editor->size = sizeof(word);
     editor->capacity = sizeof(word);
@@ -113,12 +113,109 @@ void cursor_right(Editor *editor) {
         editor->cursor_x++;
     }
 }
+
+void cursor_home(Editor *editor) {
+    editor->cursor_x = 0;
+}
+
+void cursor_end(Editor *editor) {
+    size_t line_start = editor->line_start[editor->cursor_y];
+    size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+    editor->cursor_x = line_size - 1;
+}
+
+void insert(Editor *e, char ch) {
+    // Insert at cursor
+
+    size_t pos = get_cursor_index(e);
+    if (e->size == e->capacity) {
+        size_t new_cap = e->capacity * 2;
+        e->text = realloc(e->text, new_cap);
+        e->capacity = new_cap;
+    }
+    memmove(e->text + pos + 1, e->text + pos, e->size - pos);
+    e->text[pos] = ch;
+    e->size += 1;
+    // recalculate every line start after current line to +1;
+    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
+        e->line_start[i]++;
+    }
+
+    if (ch == '\n') {
+        assert(e->num_lines < MAX_LINES);
+        memmove(e->line_start + e->cursor_y + 2, e->line_start + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(size_t));
+        e->line_start[e->cursor_y + 1] = pos + 1;
+        e->num_lines++;
+        e->cursor_x = 0;
+        e->cursor_y++;
+    } else {
+        e->cursor_x = pos - e->line_start[e->cursor_y] + 1;
+    }
+}
+void delete(Editor *e) {
+    size_t pos = get_cursor_index(e);
+    if (pos == e->size - 1) return;
+    if (e->size <= e->capacity / 2) {
+        size_t new_cap = e->capacity / 2;
+        e->text = realloc(e->text, new_cap);
+        e->capacity = new_cap;
+    } 
+
+    e->size -= 1;
+    char deleted = e->text[pos];
+    memmove(e->text + pos, e->text + pos + 1, e->size - pos);
+
+    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
+        e->line_start[i]--;
+    }
+
+    if (deleted == '\n') {
+        e->num_lines--;
+        memmove(e->line_start + e->cursor_y + 1, e->line_start + e->cursor_y + 2, (e->num_lines - e->cursor_y) * sizeof(size_t));
+    }
+    e->cursor_x = pos - e->line_start[e->cursor_y];
+}
+void backspace(Editor *e) {
+    size_t pos = get_cursor_index(e);
+    if (pos == 0) return;
+    pos -= 1;
+    if (e->size <= e->capacity / 2) {
+        size_t new_cap = e->capacity / 2;
+        e->text = realloc(e->text, new_cap);
+        e->capacity = new_cap;
+    } 
+
+    e->size -= 1;
+    char deleted = e->text[pos];
+    memmove(e->text + pos, e->text + pos + 1, e->size - pos);
+
+    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
+        e->line_start[i]--;
+    }
+
+    if (deleted == '\n') {
+        e->num_lines--;
+        memmove(e->line_start + e->cursor_y + 1, e->line_start + e->cursor_y + 2, (e->num_lines - e->cursor_y) * sizeof(size_t));
+        e->cursor_y--;
+        e->cursor_x = pos - e->line_start[e->cursor_y];
+    } else {
+        e->cursor_x--;
+    }
+}
+
+void insert_spaces(Editor *editor) {
+    size_t effective_left = get_cursor_index(editor) - editor->line_start[editor->cursor_y];
+    size_t new_left = ((effective_left / TAB_SIZE) + 1) * TAB_SIZE;
+    for(size_t i = effective_left; i < new_left; i++) {
+        insert(editor, ' ');
+    }
+}
 gboolean handle_key_press(GtkGLArea *area,
                       guint keyval,
                       guint keycode,
                       GdkModifierType state,
                       GtkEventControllerKey *event_controller) {
-    if (state & (GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_ALT_MASK)) {
+    if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) {
         return FALSE;
     }
     switch (keyval) {
@@ -138,14 +235,34 @@ gboolean handle_key_press(GtkGLArea *area,
             break;
 
         case GDK_KEY_Home:
-            main_editor.cursor_x = 0;
+            cursor_home(&main_editor);
             break;
         
         case GDK_KEY_End:
-            size_t line_start = main_editor.line_start[main_editor.cursor_y];
-            size_t line_size = main_editor.line_start[main_editor.cursor_y + 1] - line_start;
-            main_editor.cursor_x = line_size - 1;
+            cursor_end(&main_editor);
             break;
+        
+        case GDK_KEY_Return:
+            insert(&main_editor, '\n');
+            break;
+
+        case GDK_KEY_BackSpace:
+            backspace(&main_editor);
+            break;
+
+        case GDK_KEY_Delete:
+            delete(&main_editor);
+            break;
+
+        case GDK_KEY_Tab:
+            insert_spaces(&main_editor);
+            break;
+
+        default:
+            if (keyval <= UCHAR_MAX)
+                insert(&main_editor, (char)keyval);
+            else
+                return TRUE;
     }
     calculate(&main_editor);
     gtk_gl_area_queue_render(area);
