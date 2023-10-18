@@ -12,7 +12,8 @@
 typedef enum {
     VERTEX_POS = 0,
     VERTEX_SIZE,
-    VERTEX_CH,
+    VERTEX_UV_OFFSET_X,
+    VERTEX_UV_SIZE,
     VERTEX_COLOR,
     VERTEX_ATTR_COUNT
 } VertexAttr;
@@ -31,10 +32,15 @@ static const struct {
         .size = sizeof(((Vertex*)NULL)->size) / sizeof(float),
         .offset = offsetof(Vertex, size),
     },
-    [VERTEX_CH] = 
+    [VERTEX_UV_OFFSET_X] = 
     {
-        .size = sizeof(((Vertex*)NULL)->ch) / sizeof(float),
-        .offset = offsetof(Vertex, ch),
+        .size = sizeof(((Vertex*)NULL)->uv_offset_x) / sizeof(float),
+        .offset = offsetof(Vertex, uv_offset_x),
+    },
+    [VERTEX_UV_SIZE] = 
+    {
+        .size = sizeof(((Vertex*)NULL)->uv_size) / sizeof(float),
+        .offset = offsetof(Vertex, uv_size),
     },
     [VERTEX_COLOR] = 
     {
@@ -43,10 +49,11 @@ static const struct {
     }
 };
 
-static_assert(VERTEX_ATTR_COUNT == 4, "unimplemented");
+static_assert(VERTEX_ATTR_COUNT == 5, "unimplemented");
 
 GLuint vao;
 GLuint vbo;
+GLuint font_tex;
 GLuint program;
 GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_length_p) {
     GLuint shader = glCreateShader(type);
@@ -93,9 +100,9 @@ void realize(GtkGLArea *area) {
     gdk_gl_context_get_version(context, &major, &minor);
     printf("OpenGL Version: %d.%d\n", major, minor);
 
-    freetype_init();
+    font_tex = freetype_init();
 
-    init_editor(NULL);
+    init_editor();
     // compile and link shader
     GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, (const char *)shaders_vert_glsl, (const int *)&shaders_vert_glsl_len);
     GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, (const char *)shaders_frag_glsl, (const int *)&shaders_frag_glsl_len);
@@ -129,9 +136,10 @@ void realize(GtkGLArea *area) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, calculated_character_size * sizeof(Vertex), calculated_characters, GL_DYNAMIC_DRAW);
 
+
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
-    
+
 
 }
 
@@ -155,7 +163,6 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     glBindVertexArray(vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
     for (VertexAttr attr = VERTEX_POS; attr < VERTEX_ATTR_COUNT; attr++) {
         glVertexAttribPointer(attr,
             vertex_attr_param[attr].size,
@@ -178,6 +185,11 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
 
     GLint uniformResolution = glGetUniformLocation(program, "resolution");
     glUniform2f(uniformResolution, gtk_widget_get_width(GTK_WIDGET(area)), gtk_widget_get_height(GTK_WIDGET(area)));
+
+    glBindTexture(GL_TEXTURE_2D, font_tex);
+    GLuint uniformFont = glGetUniformLocation(program, "font");
+    glUniform1i(uniformFont, FONT_TEXTURE - GL_TEXTURE0);
+    
 
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, calculated_character_size);

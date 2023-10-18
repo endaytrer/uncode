@@ -6,5 +6,5 @@ typedef struct {
 
 } Editor;
 
-void init_editor(Editor *self);
+void init_editor();
 #endif // _EDITOR_H

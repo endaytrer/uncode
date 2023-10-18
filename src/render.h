@@ -5,7 +5,8 @@
 typedef struct {
     float pos[2];
     float size[2];
-    float ch;
+    float uv_offset_x;
+    float uv_size[2];
     float color[3];
 } Vertex;
 
