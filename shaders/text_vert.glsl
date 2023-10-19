@@ -23,6 +23,6 @@ void main() {
         vert_position += vec2(0.0, size.y);
         uv.y += uv_size.y;
     }
-    gl_Position = vec4(2.0 * (vert_position.x - viewport_pos.x * viewport_scale) / (viewport_size.x * viewport_scale) - 1.0, 1.0 - 2.0 * (vert_position.y - viewport_pos.y * viewport_scale) / (viewport_size.y * viewport_scale) , 0.0, 1.0);
+    gl_Position = vec4(2.0 * (vert_position.x - viewport_pos.x * float(viewport_scale)) / (viewport_size.x * float(viewport_scale)) - 1.0, 1.0 - 2.0 * (vert_position.y - viewport_pos.y * float(viewport_scale)) / (viewport_size.y * float(viewport_scale)) , 0.0, 1.0);
     frag_fg_color = fg_color;
 }
