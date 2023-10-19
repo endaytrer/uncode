@@ -12,9 +12,9 @@ size_t calculated_character_size = 0;
 Cursor cursors[MAX_CURSORS];
 size_t num_cursors = 1;
 
-static const int line_height = (FONT_SIZE_PT * PPI) >> 6;
+int line_height;
 
-float cursor_size[2] = {CURSOR_WIDTH, line_height};
+float cursor_size[2] = {CURSOR_WIDTH, 0};
 float cursor_color[4] = {0.8, 0.9, 1.0, 1.0};
 
 int viewport_size[2];
@@ -127,6 +127,9 @@ void get_text_area_size(Editor *editor, float *w, float *h) {
 void calculate(Editor *editor) {
     int hash = hash_size();
     if (!layout_updated && hash == prev_viewport_size_hash) return;
+
+    line_height = viewport_scale * ((FONT_SIZE_PT * PPI) >> 6);
+
     layout_updated = false;
     prev_viewport_size_hash = hash;
     calculated_character_size = 0;

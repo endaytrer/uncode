@@ -119,8 +119,8 @@ void realize(GtkGLArea *area) {
     gdk_gl_context_get_version(context, &major, &minor);
     printf("OpenGL Version: %d.%d\n", major, minor);
 
-    viewport_scale = gtk_widget_get_scale_factor(GTK_WIDGET(area));
-    
+    // viewport_scale = gtk_widget_get_scale_factor(GTK_WIDGET(area));
+
     font_tex = freetype_init();
     calculate_render_length(&main_editor);
     
