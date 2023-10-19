@@ -11,11 +11,11 @@ struct _UncodeAppWindow {
 G_DEFINE_TYPE(UncodeAppWindow, uncode_app_window, GTK_TYPE_APPLICATION_WINDOW);
 
 static void uncode_app_window_init(UncodeAppWindow *app) {
-
+    (void)app;
 }
 
 static void uncode_app_window_class_init(UncodeAppWindowClass *class) {
-
+    (void)class;
 }
 
 UncodeAppWindow *uncode_app_window_new(UncodeApp *app){
@@ -44,6 +44,7 @@ UncodeAppWindow *uncode_app_window_new(UncodeApp *app){
 }
 
 void uncode_app_window_open(UncodeAppWindow *win, GFile *file) {
+    (void)win;
     char *path = g_file_get_path(file);
     init_editor(&main_editor, path);
     

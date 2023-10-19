@@ -94,6 +94,7 @@ GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_le
 }
 
 void update(GdkFrameClock *self, GtkGLArea *area) {
+    (void)self;
     gtk_gl_area_queue_render(area);
 }
 
@@ -213,6 +214,7 @@ void unrealize(GtkGLArea *area) {
 }
 
 gboolean render(GtkGLArea *area, GdkGLContext *context) {
+    (void)context;
     if (gtk_gl_area_get_error(area) != NULL) 
         return FALSE;
     viewport_size[0] = gtk_widget_get_width(GTK_WIDGET(area));
