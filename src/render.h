@@ -31,6 +31,7 @@ extern float cursor_color[4];
 // viewport
 extern int viewport_size[2];
 extern float viewport_pos[2];
+extern int viewport_scale;
 extern time_t start_sec;
 extern float last_edit;
 

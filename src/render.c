@@ -119,9 +119,11 @@ void realize(GtkGLArea *area) {
     gdk_gl_context_get_version(context, &major, &minor);
     printf("OpenGL Version: %d.%d\n", major, minor);
 
+    viewport_scale = gtk_widget_get_scale_factor(GTK_WIDGET(area));
+    
     font_tex = freetype_init();
     calculate_render_length(&main_editor);
-    // init_editor(&main_editor);
+    
 
     // compile and link shader
     text_program = glCreateProgram();
@@ -249,11 +251,14 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     GLint uniformTime = glGetUniformLocation(text_program, "time");
     glUniform1f(uniformTime, (float)time.tv_usec / 1000000 + time.tv_sec);
 
-    GLint uniformResolution = glGetUniformLocation(text_program, "resolution");
+    GLint uniformResolution = glGetUniformLocation(text_program, "viewport_size");
     glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
 
     GLint uniformViewportPos = glGetUniformLocation(text_program, "viewport_pos");
     glUniform2f(uniformViewportPos, viewport_pos[0], viewport_pos[1]);
+
+    GLint uniformViewportScale = glGetUniformLocation(text_program, "viewport_scale");
+    glUniform1i(uniformViewportScale, viewport_scale);
 
     glBindTexture(GL_TEXTURE_2D, font_tex);
     GLuint uniformFont = glGetUniformLocation(text_program, "font");
@@ -275,15 +280,18 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
         glEnableVertexAttribArray(posAttrib);
         glVertexAttribDivisor(posAttrib, 1);
 
-        // uniforms: time, resolution, color, size
+        // uniforms: time, viewport_size, color, size
         uniformTime = glGetUniformLocation(cursor_program, "time");
         glUniform1f(uniformTime, (float)time.tv_usec / 1000000 + time.tv_sec - last_edit);
 
-        uniformResolution = glGetUniformLocation(cursor_program, "resolution");
+        uniformResolution = glGetUniformLocation(cursor_program, "viewport_size");
         glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
 
         uniformViewportPos = glGetUniformLocation(cursor_program, "viewport_pos");
         glUniform2f(uniformViewportPos, viewport_pos[0], viewport_pos[1]);
+
+        uniformViewportScale = glGetUniformLocation(cursor_program, "viewport_scale");
+        glUniform1i(uniformViewportScale, viewport_scale);
 
         GLuint uniformFgColor = glGetUniformLocation(cursor_program, "fg_color");
         glUniform4f(uniformFgColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);

@@ -18,12 +18,13 @@ float cursor_size[2] = {CURSOR_WIDTH, line_height};
 float cursor_color[4] = {0.8, 0.9, 1.0, 1.0};
 
 int viewport_size[2];
+float viewport_pos[2] = {0, 0};
+int viewport_scale = 2;
 int prev_viewport_size_hash = 0;
 
 int hash_size(void) {
     return viewport_size[0] * 28367 + viewport_size[1];
 }
-float viewport_pos[2] = {0, 0};
 Editor main_editor = {
     .text = 0,
     .size = 0, // including trailing '\0'
