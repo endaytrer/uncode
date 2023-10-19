@@ -1,5 +1,5 @@
 #define GL_GLEXT_PROTOTYPES
-#include <GL/glew.h>
+// #include <GL/glew.h>
 #include <GL/gl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -94,6 +94,7 @@ GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_le
 }
 
 void update(GdkFrameClock *self, GtkGLArea *area) {
+    (void)self;
     gtk_gl_area_queue_render(area);
 }
 
@@ -104,19 +105,21 @@ void realize(GtkGLArea *area) {
         return;
 
     
-    if (glewInit() != GLEW_OK) {
-        fprintf(stderr, "Could not init glew!");
-        exit(-1);
-    }
-    // check GLEW extensions
-    if (!GLEW_ARB_draw_instanced || !GLEW_ARB_instanced_arrays) {
-        fprintf(stderr, "Unsupported GLEW extension\n");
-        exit(-1);
-    }
+    // if (glewInit() != GLEW_OK) {
+    //     fprintf(stderr, "Could not init glew!");
+    //     exit(-1);
+    // }
+
     int major, minor;
     GdkGLContext *context = gtk_gl_area_get_context(area);
     gdk_gl_context_get_version(context, &major, &minor);
     printf("OpenGL Version: %d.%d\n", major, minor);
+
+    // check GLEW extensions
+    // if (!GLEW_ARB_draw_instanced || !GLEW_ARB_instanced_arrays) {
+    //    fprintf(stderr, "Unsupported GLEW extension\n");
+        // exit(-1);
+    // }
 
     font_tex = freetype_init();
     calculate_render_length(&main_editor);
@@ -213,6 +216,7 @@ void unrealize(GtkGLArea *area) {
 }
 
 gboolean render(GtkGLArea *area, GdkGLContext *context) {
+    (void)context;
     if (gtk_gl_area_get_error(area) != NULL) 
         return FALSE;
     viewport_size[0] = gtk_widget_get_width(GTK_WIDGET(area));

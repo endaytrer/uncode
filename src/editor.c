@@ -116,7 +116,7 @@ float text_area_size[2] = {0, 0};
 void get_text_area_size(Editor *editor, float *w, float *h) {
     *h = editor->num_lines * line_height;
     *w = 0;
-    for (int i = 0; i < editor->num_lines; i++) {
+    for (size_t i = 0; i < editor->num_lines; i++) {
         if (editor->lines[i].render_length > *w) {
             *w = editor->lines[i].render_length;
         }
@@ -137,7 +137,6 @@ void calculate(Editor *editor) {
     text_area_size[0] = 0;
     text_area_size[1] = 0;
     if (editor->size == 0) return;
-    size_t cursor_index = get_cursor_index(editor);
 
     get_cursor_pos(editor, cursors[0].pos, cursors[0].pos + 1);
 
@@ -287,14 +286,14 @@ void insert(Editor *e, char ch) {
     for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++)
         e->lines[i].start++;
     
-    e->lines[e->cursor_y].render_length += char_params[ch].advance_x;
+    e->lines[e->cursor_y].render_length += char_params[(size_t)ch].advance_x;
     if (ch == '\n') {
         assert(e->num_lines < MAX_LINES);
         memmove(e->lines + e->cursor_y + 2, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
         e->lines[e->cursor_y + 1].start = pos + 1;
         // calculate render length before
         float current_length = 0;
-        for (int i = e->lines[e->cursor_y].start; i <= pos; i++) {
+        for (size_t i = e->lines[e->cursor_y].start; i <= pos; i++) {
             current_length += char_params[(size_t)e->text[i]].advance_x;
         }
         e->lines[e->cursor_y + 1].render_length = e->lines[e->cursor_y].render_length - current_length;
@@ -376,6 +375,9 @@ gboolean handle_key_press(GtkGLArea *area,
                       guint keycode,
                       GdkModifierType state,
                       GtkEventControllerKey *event_controller) {
+
+    (void)keycode;
+    (void)event_controller;
     if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) {
         return FALSE;
     }
@@ -445,7 +447,8 @@ gboolean handle_scroll(
     gdouble dy,
     gpointer user_data
 ) {
-    (void) user_data;
+    (void)self;
+    (void)user_data;
     viewport_pos[0] += SCROLL_SPEED * dx;
     viewport_pos[1] += SCROLL_SPEED * dy;
     adjust_screen_text_area(&main_editor);

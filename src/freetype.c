@@ -1,4 +1,5 @@
 #include "freetype.h"
+#define PRINTABLE_START 32
 
 FT_Library lib;
 FT_Face face;
@@ -23,7 +24,7 @@ GLuint freetype_init(void) {
     // put ascii printable character into a altas.
     // first, get size
     unsigned int width = 0, height = 0;
-    for (int c = 32; c <= UCHAR_MAX; c++) {
+    for (int c = PRINTABLE_START; c <= UCHAR_MAX; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             fprintf(stderr, "Could not load char %d\n", c);
             continue;
@@ -46,10 +47,10 @@ GLuint freetype_init(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // one byte per pixel
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
 
     unsigned int temp_offset = 0;
-    for (int c = 32; c <= UCHAR_MAX; c++) {
+    for (int c = PRINTABLE_START; c <= UCHAR_MAX; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             continue;
         }

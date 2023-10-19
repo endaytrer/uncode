@@ -14,7 +14,7 @@ struct _UncodeApp {
 G_DEFINE_TYPE(UncodeApp, uncode_app, ADW_TYPE_APPLICATION);
 
 static void uncode_app_init(UncodeApp *app) {
-
+    (void)app;
 }
 
 static void uncode_app_activate(GApplication* app) {
@@ -24,6 +24,7 @@ static void uncode_app_activate(GApplication* app) {
 }
 
 static void uncode_app_open(GApplication *app, GFile **files, int n_files, const char *hint) {
+    (void)hint;
     assert(n_files == 1);
     GList *windows;
     UncodeAppWindow *win;
