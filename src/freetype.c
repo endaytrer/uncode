@@ -1,5 +1,6 @@
 #include "freetype.h"
 #define PRINTABLE_START 32
+#define PRINTABLE_END 127
 
 FT_Library lib;
 FT_Face face;
@@ -24,7 +25,7 @@ GLuint freetype_init(void) {
     // put ascii printable character into a altas.
     // first, get size
     unsigned int width = 0, height = 0;
-    for (int c = PRINTABLE_START; c <= UCHAR_MAX; c++) {
+    for (int c = PRINTABLE_START; c <= PRINTABLE_END; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             fprintf(stderr, "Could not load char %d\n", c);
             continue;
@@ -41,16 +42,15 @@ GLuint freetype_init(void) {
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // one byte per pixel
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
-
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, 0);
     unsigned int temp_offset = 0;
-    for (int c = PRINTABLE_START; c <= UCHAR_MAX; c++) {
+    for (int c = PRINTABLE_START; c <= PRINTABLE_END; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             continue;
         }
@@ -62,7 +62,7 @@ GLuint freetype_init(void) {
         char_params[c].bitmap_left = face->glyph->bitmap_left;
         char_params[c].bitmap_top = face->glyph->bitmap_top;
         char_params[c].advance_x = face->glyph->advance.x >> 6;
-        glTexSubImage2D(GL_TEXTURE_2D, 0, temp_offset, 0, face->glyph->bitmap.width, face->glyph->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, temp_offset, 0, face->glyph->bitmap.width, face->glyph->bitmap.rows, GL_ALPHA, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
         temp_offset += face->glyph->bitmap.width;
     }
 

@@ -188,11 +188,15 @@ void adjust_screen_text_area(Editor *editor) {
         viewport_pos[0] = 0;
     else if (viewport_pos[0] + viewport_size[0] > w)
         viewport_pos[0] = w - viewport_size[0];
+    else if (viewport_pos[0] < 0) 
+        viewport_pos[0] = 0;
     
     if (h < viewport_size[1])
         viewport_pos[1] = 0;
     else if (viewport_pos[1] + viewport_size[1] > h)
         viewport_pos[1] = h - viewport_size[1];
+    else if (viewport_pos[1] < 0) 
+        viewport_pos[1] = 0;
 }
 
 void adjust_screen_cursor(Editor *editor) {
