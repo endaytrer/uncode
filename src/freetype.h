@@ -8,8 +8,9 @@
 
 
 #define FONT "fonts/NotoSansMono-Regular.ttf"
-#define FONT_SIZE_PT 12
-#define PPI 150
+#define FONT_SIZE_PT 14
+#define PPI 72
+
 #define FONT_TEXTURE GL_TEXTURE0
 
 extern FT_Library lib;

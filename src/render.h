@@ -5,13 +5,17 @@
 
 #define CHAR_CAPACITY 65536
 #define MAX_CURSORS 1
+
+#define EPS 0.001f
+#define DRAG 0.90f
+#define SCROLL_SPEED 300
+
 typedef struct {
     float pos[2];
     float size[2];
     float uv_offset_x;
     float uv_size[2];
     float fg_color[3];
-    float bg_color[3];
 } Glyph;
 
 typedef struct {
@@ -24,13 +28,14 @@ extern size_t calculated_character_size;
 extern Cursor cursors[MAX_CURSORS];
 extern size_t num_cursors;
 extern float cursor_size[2];
-extern float cursor_color[4];
+extern float cursor_color[3];
 // TODO: multiple cursor support
 
 
 // viewport
 extern int viewport_size[2];
 extern float viewport_pos[2];
+extern float viewport_velocity[2];
 extern int viewport_scale;
 extern time_t start_sec;
 extern float last_edit;

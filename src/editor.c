@@ -14,11 +14,13 @@ size_t num_cursors = 1;
 
 int line_height;
 
-float cursor_size[2] = {CURSOR_WIDTH, 0};
-float cursor_color[4] = {0.8, 0.9, 1.0, 1.0};
+float cursor_size[2];
+float cursor_color[3] = CURSOR_COLOR;
 
 int viewport_size[2];
 float viewport_pos[2] = {0, 0};
+float viewport_velocity[2] = {0, 0};
+
 int viewport_scale = 2;
 int prev_viewport_size_hash = 0;
 
@@ -78,7 +80,7 @@ void init_editor(Editor *editor, char *file) {
     editor->num_lines = 0;
     editor->lines[0].start = 0;
     for (size_t i = 0; i < editor->size; i++) {
-        if (editor->text[i] == '\n' || editor->text[i] == '\0') {
+        if (editor->text[i] == '\n' || i == editor->size - 1) {
             editor->lines[++editor->num_lines].start = i + 1;
         }
     }
@@ -100,9 +102,8 @@ size_t get_cursor_index(Editor *editor) {
     return line_start + editor->cursor_x;
 }
 
-
 void get_cursor_pos(Editor *editor, float *x, float *y) {
-    *y = editor->cursor_y * line_height + 5 * viewport_scale;
+    *y = editor->cursor_y * line_height + CURSOR_OFFSET_Y * viewport_scale;
     size_t line_start = editor->lines[editor->cursor_y].start;
     size_t effective_left = get_cursor_index(editor) - line_start;
     *x = 0;
@@ -113,7 +114,7 @@ void get_cursor_pos(Editor *editor, float *x, float *y) {
 }
 
 void get_text_area_size(Editor *editor, float *w, float *h) {
-    *h = editor->num_lines * line_height + 5 * viewport_scale;
+    *h = editor->num_lines * line_height + CURSOR_OFFSET_Y * viewport_scale;
     *w = 0;
     for (size_t i = 0; i < editor->num_lines; i++) {
         if (editor->lines[i].render_length > *w) {
@@ -133,8 +134,6 @@ void calculate(Editor *editor) {
     prev_viewport_size_hash = hash;
     calculated_character_size = 0;
     num_cursors = 0;
-    unsigned int accumulated_width = 0, accumulated_height = 0;
-    int letter_spacing = 0;
     cursor_size[0] = CURSOR_WIDTH * viewport_scale;
     cursor_size[1] = line_height;
     if (editor->size == 0) return;
@@ -147,37 +146,40 @@ void calculate(Editor *editor) {
         cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1] * viewport_scale) {
         num_cursors = 1;
     }
+    int start = viewport_pos[1] * viewport_scale / line_height - 2;
+    size_t line = start < 0 ? 0 : start;
+    size_t end = (viewport_pos[1] + viewport_size[1]) * viewport_scale / line_height + 1;
+    if (editor->num_lines - 1 < end)
+        end = editor->num_lines - 1;
+    for (; line <= end; line++) {
+        size_t accumulated_width = 0;
+        size_t top = line * line_height;
+        for (size_t i = editor->lines[line].start; i < editor->lines[line + 1].start; i++) {
 
-    for (size_t i = 0; i < editor->size; ++i) {
-        size_t index = (size_t) editor->text[i];
-        
-        calculated_characters[calculated_character_size] = (Glyph) {
-            .uv_offset_x = char_params[index].offset,
-            .uv_size = {char_params[index].uv_width, char_params[index].uv_height},
-            .pos = {accumulated_width + char_params[index].bitmap_left, accumulated_height + line_height - char_params[index].bitmap_top},
-            .size = {char_params[index].width, char_params[index].height},
-            .bg_color = BG_COLOR,
-            .fg_color = FG_COLOR
-        };
+            size_t index = (size_t) editor->text[i];
 
-        if (editor->text[i] == '\n' || editor->text[i] == '\0') {
-            accumulated_height += line_height;
-            accumulated_width = 0;
-            continue;
-        }
-        accumulated_width += char_params[index].advance_x + letter_spacing;
+            calculated_characters[calculated_character_size] = (Glyph) {
+                .uv_offset_x = char_params[index].offset,
+                .uv_size = {char_params[index].uv_width, char_params[index].uv_height},
+                .pos = {accumulated_width + char_params[index].bitmap_left, top + line_height - char_params[index].bitmap_top},
+                .size = {char_params[index].width, char_params[index].height},
+                .fg_color = FG_COLOR
+            };
+            accumulated_width += char_params[index].advance_x;
 
-        // if out of bound, don't render it
-        if (calculated_characters[calculated_character_size].pos[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale ||
-            calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] * viewport_scale ||
-            calculated_characters[calculated_character_size].pos[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale||
-            calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1] * viewport_scale
-            ) {
+            if (calculated_characters[calculated_character_size].pos[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale) {
+                break;
+            }
+            if (calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] * viewport_scale ||
+                calculated_characters[calculated_character_size].pos[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale ||
+                calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1] * viewport_scale
+                ) {
                 continue;
-        }
+            }
 
-        calculated_character_size++;
-        assert(calculated_character_size <= CHAR_CAPACITY);
+            calculated_character_size++;
+            assert(calculated_character_size <= CHAR_CAPACITY);
+        }
     }
 }
 
@@ -191,7 +193,7 @@ void adjust_screen_text_area(Editor *editor) {
     else if (viewport_pos[0] < 0)
         viewport_pos[0] = 0;
     
-    if (h < viewport_size[1])
+    if (h < viewport_size[1] * viewport_scale)
         viewport_pos[1] = 0;
     else if ((viewport_pos[1] + viewport_size[1]) * viewport_scale > h)
         viewport_pos[1] = h / viewport_scale - viewport_size[1];
@@ -358,7 +360,7 @@ void backspace(Editor *e) {
     if (deleted == '\n') {
         e->num_lines--;
         e->lines[e->cursor_y - 1].render_length += e->lines[e->cursor_y].render_length;
-        memmove(e->lines + e->cursor_y, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
+        memmove(e->lines + e->cursor_y, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y + 1) * sizeof(e->lines[0]));
         e->cursor_y--;
         e->cursor_x = pos - e->lines[e->cursor_y].start;
     } else {
@@ -379,6 +381,7 @@ gboolean handle_key_press(GtkGLArea *area,
                       guint keycode,
                       GdkModifierType state,
                       GtkEventControllerKey *event_controller) {
+    (void)area;
     (void)keycode;
     (void)event_controller;
     if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) {
@@ -438,12 +441,9 @@ gboolean handle_key_press(GtkGLArea *area,
     gettimeofday(&time, NULL);
     time.tv_sec -= start_sec;
     last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
-
-    gtk_gl_area_queue_render(area);
     return TRUE;
 }
 
-#define SCROLL_SPEED 10
 gboolean handle_scroll(
     GtkEventControllerScroll* self,
     gdouble dx,
@@ -452,9 +452,62 @@ gboolean handle_scroll(
 ) {
     (void)self;
     (void)user_data;
-    viewport_pos[0] += SCROLL_SPEED * dx;
-    viewport_pos[1] += SCROLL_SPEED * dy;
-    adjust_screen_text_area(&main_editor);
-    layout_updated = true;
+    viewport_velocity[0] += SCROLL_SPEED * dx;
+    viewport_velocity[1] += SCROLL_SPEED * dy;
     return TRUE;
+}
+
+void handle_mouse_down (
+    GtkGesture* self,
+    GdkEventSequence* sequence,
+    gpointer user_data
+) {
+    (void)user_data;
+    double x, y;
+    gtk_gesture_get_point(self, sequence, &x, &y);
+    x = (x + viewport_pos[0]) * viewport_scale;
+    y = (y + viewport_pos[1] - CURSOR_OFFSET_Y) * viewport_scale;
+    main_editor.cursor_y = (size_t)(y / line_height);
+    if (main_editor.cursor_y >= main_editor.num_lines)
+        main_editor.cursor_y = main_editor.num_lines - 1;
+    else if (y / line_height < 0)
+        main_editor.cursor_y = 0;
+
+    if (x <= 0) {
+        main_editor.cursor_x = 0;
+    } else {
+        // TODO: replace with binary search, although improvement would be insignificant
+        float render_length = 0;
+        bool rendered = false;
+        for (size_t i = main_editor.lines[main_editor.cursor_y].start; i < main_editor.lines[main_editor.cursor_y + 1].start; i++) {
+            FT_Long prevhalf = char_params[(size_t)main_editor.text[i]].advance_x / 2;
+            FT_Long nexthalf = char_params[(size_t)main_editor.text[i]].advance_x - prevhalf;
+            render_length += prevhalf;
+            if (render_length >= x) {
+                main_editor.cursor_x = i -  main_editor.lines[main_editor.cursor_y].start;
+                rendered = true;
+                break;
+            }
+            render_length += nexthalf;
+        }
+        if (!rendered) {
+            main_editor.cursor_x = main_editor.lines[main_editor.cursor_y + 1].start - main_editor.lines[main_editor.cursor_y].start - 1; 
+        }
+    }
+    adjust_screen_cursor(&main_editor);
+    layout_updated = true;
+    struct timeval time;
+    gettimeofday(&time, NULL);
+    time.tv_sec -= start_sec;
+    last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
+}
+void handle_mouse_up (
+    GtkGesture* self,
+    GdkEventSequence* sequence,
+    gpointer user_data
+) {
+
+    (void)user_data;
+    double x, y;
+    gtk_gesture_get_point(self, sequence, &x, &y);
 }

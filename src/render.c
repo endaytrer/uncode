@@ -8,13 +8,13 @@
 #include "shaders.h"
 #include "freetype.h"
 #include "editor.h"
+
 typedef enum {
     VERTEX_POS = 0,
     VERTEX_SIZE,
     VERTEX_UV_OFFSET_X,
     VERTEX_UV_SIZE,
     VERTEX_FG_COLOR,
-    VERTEX_BG_COLOR,
     VERTEX_ATTR_COUNT
 } VertexAttr;
 
@@ -46,15 +46,10 @@ static const struct {
     {
         .size = sizeof(((Glyph*)NULL)->fg_color) / sizeof(float),
         .offset = offsetof(Glyph, fg_color),
-    },
-    [VERTEX_BG_COLOR] = 
-    {
-        .size = sizeof(((Glyph*)NULL)->bg_color) / sizeof(float),
-        .offset = offsetof(Glyph, bg_color),
     }
 };
 
-static_assert(VERTEX_ATTR_COUNT == 6, "unimplemented");
+static_assert(VERTEX_ATTR_COUNT == 5, "unimplemented");
 
 GLuint font_tex;
 
@@ -70,6 +65,8 @@ GLuint cursor_program;
 
 time_t start_sec;
 float last_edit;
+float delta_t;
+
 GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_length_p) {
     GLuint shader = glCreateShader(type);
     const char *source[] = {(const char *)shader_text};
@@ -95,6 +92,13 @@ GLuint compile_shader(GLenum type, const char *shader_text, const int *shader_le
 
 void update(GdkFrameClock *self, GtkGLArea *area) {
     (void)self;
+
+    double fps = gdk_frame_clock_get_fps(self);
+    if (fps > EPS) {
+        delta_t = 1.0f / fps;
+    } else {
+        delta_t = 1.0f / 60;
+    }
     gtk_gl_area_queue_render(area);
 }
 
@@ -189,13 +193,17 @@ void realize(GtkGLArea *area) {
     glGenBuffers(1, &cursor_vbo);
     glGenVertexArrays(1, &cursor_vao);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     struct timeval start_time;
     gettimeofday(&start_time, NULL);
     start_sec = start_time.tv_sec;
     
     GdkFrameClock *frame_clock = gtk_widget_get_frame_clock(GTK_WIDGET(area));
-    gdk_frame_clock_begin_updating(frame_clock);
     g_signal_connect(frame_clock, "update", G_CALLBACK(update), area);
+    gdk_frame_clock_begin_updating(frame_clock);
+    delta_t = 1.0f / 60;
 }
 
 void unrealize(GtkGLArea *area) {
@@ -214,18 +222,33 @@ void unrealize(GtkGLArea *area) {
     glDeleteBuffers(1, &cursor_vbo);
     glDeleteProgram(cursor_program);
 }
-
 gboolean render(GtkGLArea *area, GdkGLContext *context) {
     (void)context;
     if (gtk_gl_area_get_error(area) != NULL) 
         return FALSE;
     viewport_size[0] = gtk_widget_get_width(GTK_WIDGET(area));
     viewport_size[1] = gtk_widget_get_height(GTK_WIDGET(area));
+    if (viewport_velocity[0] * viewport_velocity[0] + viewport_velocity[1] * viewport_velocity[1] > 0.01) {
+        viewport_pos[0] += delta_t * viewport_velocity[0];
+        viewport_pos[1] += delta_t * viewport_velocity[1];
+        // apply drag force
+
+        viewport_velocity[0] *= DRAG;
+        viewport_velocity[1] *= DRAG;
+
+        layout_updated = true;
+        
+    } else {
+        viewport_velocity[0] = 0;
+        viewport_velocity[1] = 0;
+    }
+
+    adjust_screen_text_area(&main_editor);
     calculate(&main_editor);
 
     const float bg_color[] = BG_COLOR;
     glClearColor(bg_color[0], bg_color[1], bg_color[2], 1.0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT);
 
     struct timeval time;
     gettimeofday(&time, NULL);
@@ -294,11 +317,8 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
         glUniform1i(uniformViewportScale, viewport_scale);
 
         GLuint uniformFgColor = glGetUniformLocation(cursor_program, "fg_color");
-        glUniform4f(uniformFgColor, cursor_color[0], cursor_color[1], cursor_color[2], cursor_color[3]);
+        glUniform3f(uniformFgColor, cursor_color[0], cursor_color[1], cursor_color[2]);
 
-        const float bg_color[] = BG_COLOR;
-        GLuint uniformBgColor = glGetUniformLocation(cursor_program, "bg_color");
-        glUniform4f(uniformBgColor, bg_color[0], bg_color[1], bg_color[2], 1.0);
 
         GLuint uniformSize = glGetUniformLocation(cursor_program, "size");
         glUniform2f(uniformSize, cursor_size[0], cursor_size[1]);
@@ -307,6 +327,5 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     }
 
     glFlush();
-    gtk_gl_area_queue_render(area);
     return TRUE;
 }
