@@ -32,7 +32,7 @@ Editor main_editor = {
     .cursor_x = 0,
     .cursor_y = 0,
 
-    .line_start = {0},
+    .lines = {},
     .num_lines = 0,
 
 };
@@ -75,18 +75,26 @@ void init_editor(Editor *editor, char *file) {
 
     // build line buffer
     editor->num_lines = 0;
-    editor->line_start[0] = 0;
+    editor->lines[0].start = 0;
     for (size_t i = 0; i < editor->size; i++) {
-        if (editor->text[i] == '\n' || editor->text[i] == '\0')
-            editor->line_start[++editor->num_lines] = i + 1;
+        if (editor->text[i] == '\n' || editor->text[i] == '\0') {
+            editor->lines[++editor->num_lines].start = i + 1;
+        }
     }
 }
-
+void calculate_render_length(Editor *editor) {
+    for (size_t line = 0; line < editor->num_lines; line++) {
+        editor->lines[line].render_length = 0;
+        for (size_t i = editor->lines[line].start; i != editor->lines[line + 1].start; i++) {
+            editor->lines[line].render_length += char_params[(size_t)editor->text[i]].advance_x;
+        }
+    }
+}
 size_t get_cursor_index(Editor *editor) {
     assert(editor->cursor_y < editor->num_lines);
 
-    size_t line_start = editor->line_start[editor->cursor_y];
-    size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+    size_t line_start = editor->lines[editor->cursor_y].start;
+    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
     if (editor->cursor_x >= line_size) return line_start + line_size - 1;
     return line_start + editor->cursor_x;
 }
@@ -94,7 +102,7 @@ size_t get_cursor_index(Editor *editor) {
 
 void get_cursor_pos(Editor *editor, float *x, float *y) {
     *y = editor->cursor_y * line_height + 5;
-    size_t line_start = editor->line_start[editor->cursor_y];
+    size_t line_start = editor->lines[editor->cursor_y].start;
     size_t effective_left = get_cursor_index(editor) - line_start;
     *x = 0;
     for (size_t i = 0; i < effective_left; i++) {
@@ -102,7 +110,18 @@ void get_cursor_pos(Editor *editor, float *x, float *y) {
         *x += char_params[(size_t)ch].advance_x;
     }
 }
+
 bool layout_updated = true;
+float text_area_size[2] = {0, 0};
+void get_text_area_size(Editor *editor, float *w, float *h) {
+    *h = editor->num_lines * line_height;
+    *w = 0;
+    for (int i = 0; i < editor->num_lines; i++) {
+        if (editor->lines[i].render_length > *w) {
+            *w = editor->lines[i].render_length;
+        }
+    }
+}
 
 void calculate(Editor *editor) {
     int hash = hash_size();
@@ -115,16 +134,20 @@ void calculate(Editor *editor) {
     int letter_spacing = 0;
     cursor_size[0] = CURSOR_WIDTH;
     cursor_size[1] = line_height;
+    text_area_size[0] = 0;
+    text_area_size[1] = 0;
     if (editor->size == 0) return;
     size_t cursor_index = get_cursor_index(editor);
 
     get_cursor_pos(editor, cursors[0].pos, cursors[0].pos + 1);
+
     if (cursors[0].pos[0] <= viewport_pos[0] + viewport_size[0] &&
         cursors[0].pos[0] + cursor_size[0] >= viewport_pos[0] &&
         cursors[0].pos[1] <= viewport_pos[1] + viewport_size[1] &&
         cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1]) {
         num_cursors = 1;
     }
+    get_text_area_size(editor, text_area_size, text_area_size + 1);
 
     for (size_t i = 0; i < editor->size; ++i) {
         size_t index = (size_t) editor->text[i];
@@ -138,7 +161,7 @@ void calculate(Editor *editor) {
             .fg_color = FG_COLOR
         };
 
-        if (editor->text[i] == '\n') {
+        if (editor->text[i] == '\n' || editor->text[i] == '\0') {
             accumulated_height += line_height;
             accumulated_width = 0;
             continue;
@@ -158,7 +181,22 @@ void calculate(Editor *editor) {
         assert(calculated_character_size <= CHAR_CAPACITY);
     }
 }
-void adjust_screen(Editor *editor) {
+
+void adjust_screen_text_area(Editor *editor) {
+    float w, h;
+    get_text_area_size(editor, &w, &h);
+    if (w < viewport_size[0])
+        viewport_pos[0] = 0;
+    else if (viewport_pos[0] + viewport_size[0] > w)
+        viewport_pos[0] = w - viewport_size[0];
+    
+    if (h < viewport_size[1])
+        viewport_pos[1] = 0;
+    else if (viewport_pos[1] + viewport_size[1] > h)
+        viewport_pos[1] = h - viewport_size[1];
+}
+
+void adjust_screen_cursor(Editor *editor) {
     float x, y;
     get_cursor_pos(editor, &x, &y);
     if (x < viewport_pos[0])
@@ -170,6 +208,7 @@ void adjust_screen(Editor *editor) {
         viewport_pos[1] = y;
     if (y + cursor_size[1] > viewport_pos[1] + viewport_size[1])
         viewport_pos[1] = y + cursor_size[1] - viewport_size[1];
+    adjust_screen_text_area(editor);
 }
 void cursor_up(Editor *editor) {
     if (editor->cursor_y == 0)
@@ -177,26 +216,26 @@ void cursor_up(Editor *editor) {
     else
         editor->cursor_y -= 1;
 
-    adjust_screen(editor);
+    adjust_screen_cursor(editor);
 }
 void cursor_down(Editor *editor) {
     if (editor->cursor_y == editor->num_lines - 1) {
-        size_t line_start = editor->line_start[editor->cursor_y];
-        size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+        size_t line_start = editor->lines[editor->cursor_y].start;
+        size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
         editor->cursor_x = line_size - 1;
     } else
         editor->cursor_y += 1;
 
-    adjust_screen(editor);
+    adjust_screen_cursor(editor);
 }
 void cursor_left(Editor *editor) {
-    size_t line_start = editor->line_start[editor->cursor_y];
-    size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+    size_t line_start = editor->lines[editor->cursor_y].start;
+    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
     if ((editor->cursor_x == 0 || line_size == 1) && editor->cursor_y > 0) { // at line start, wrap to previous line
     
         editor->cursor_y--;
-        line_start = editor->line_start[editor->cursor_y];
-        line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+        line_start = editor->lines[editor->cursor_y].start;
+        line_size = editor->lines[editor->cursor_y + 1].start - line_start;
         editor->cursor_x = line_size - 1;
     } else if (editor->cursor_x > 0 && line_size > 1) {
         if (editor->cursor_x >= line_size)
@@ -206,30 +245,30 @@ void cursor_left(Editor *editor) {
         }
     }
 
-    adjust_screen(editor);
+    adjust_screen_cursor(editor);
 }
 void cursor_right(Editor *editor) {
-    size_t line_start = editor->line_start[editor->cursor_y];
-    size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+    size_t line_start = editor->lines[editor->cursor_y].start;
+    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
     if ((editor->cursor_x >= line_size - 1 || line_size == 1) && editor->cursor_y < editor->num_lines - 1) { // at line end, wrap to next line
         editor->cursor_y++;
         editor->cursor_x = 0;
     } else if (editor->cursor_x < line_size - 1 && line_size > 1) {
         editor->cursor_x++;
     }
-    adjust_screen(editor);
+    adjust_screen_cursor(editor);
 }
 
 void cursor_home(Editor *editor) {
     editor->cursor_x = 0;
-    adjust_screen(editor);
+    adjust_screen_cursor(editor);
 }
 
 void cursor_end(Editor *editor) {
-    size_t line_start = editor->line_start[editor->cursor_y];
-    size_t line_size = editor->line_start[editor->cursor_y + 1] - line_start;
+    size_t line_start = editor->lines[editor->cursor_y].start;
+    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
     editor->cursor_x = line_size - 1;
-    adjust_screen(editor);
+    adjust_screen_cursor(editor);
 }
 
 void insert(Editor *e, char ch) {
@@ -245,21 +284,29 @@ void insert(Editor *e, char ch) {
     e->text[pos] = ch;
     e->size += 1;
     // recalculate every line start after current line to +1;
-    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
-        e->line_start[i]++;
-    }
-
+    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++)
+        e->lines[i].start++;
+    
+    e->lines[e->cursor_y].render_length += char_params[ch].advance_x;
     if (ch == '\n') {
         assert(e->num_lines < MAX_LINES);
-        memmove(e->line_start + e->cursor_y + 2, e->line_start + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(size_t));
-        e->line_start[e->cursor_y + 1] = pos + 1;
+        memmove(e->lines + e->cursor_y + 2, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
+        e->lines[e->cursor_y + 1].start = pos + 1;
+        // calculate render length before
+        float current_length = 0;
+        for (int i = e->lines[e->cursor_y].start; i <= pos; i++) {
+            current_length += char_params[(size_t)e->text[i]].advance_x;
+        }
+        e->lines[e->cursor_y + 1].render_length = e->lines[e->cursor_y].render_length - current_length;
+        e->lines[e->cursor_y].render_length = current_length;
+
         e->num_lines++;
         e->cursor_x = 0;
         e->cursor_y++;
     } else {
-        e->cursor_x = pos - e->line_start[e->cursor_y] + 1;
+        e->cursor_x = pos - e->lines[e->cursor_y].start + 1;
     }
-    adjust_screen(e);
+    adjust_screen_cursor(e);
 }
 void delete(Editor *e) {
     size_t pos = get_cursor_index(e);
@@ -275,14 +322,16 @@ void delete(Editor *e) {
     memmove(e->text + pos, e->text + pos + 1, e->size - pos);
 
     for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
-        e->line_start[i]--;
+        e->lines[i].start--;
     }
-
+    e->lines[e->cursor_y].render_length -= char_params[(size_t)deleted].advance_x;
     if (deleted == '\n') {
         e->num_lines--;
-        memmove(e->line_start + e->cursor_y + 1, e->line_start + e->cursor_y + 2, (e->num_lines - e->cursor_y) * sizeof(size_t));
+        e->lines[e->cursor_y].render_length += e->lines[e->cursor_y + 1].render_length;
+        memmove(e->lines + e->cursor_y + 1, e->lines + e->cursor_y + 2, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
     }
-    e->cursor_x = pos - e->line_start[e->cursor_y];
+    e->cursor_x = pos - e->lines[e->cursor_y].start;
+    adjust_screen_text_area(e);
 }
 void backspace(Editor *e) {
     size_t pos = get_cursor_index(e);
@@ -299,22 +348,24 @@ void backspace(Editor *e) {
     memmove(e->text + pos, e->text + pos + 1, e->size - pos);
 
     for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
-        e->line_start[i]--;
+        e->lines[i].start--;
     }
 
+    e->lines[e->cursor_y].render_length -= char_params[(size_t)deleted].advance_x;
     if (deleted == '\n') {
         e->num_lines--;
-        memmove(e->line_start + e->cursor_y + 1, e->line_start + e->cursor_y + 2, (e->num_lines - e->cursor_y) * sizeof(size_t));
+        e->lines[e->cursor_y - 1].render_length += e->lines[e->cursor_y].render_length;
+        memmove(e->lines + e->cursor_y, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
         e->cursor_y--;
-        e->cursor_x = pos - e->line_start[e->cursor_y];
+        e->cursor_x = pos - e->lines[e->cursor_y].start;
     } else {
         e->cursor_x--;
     }
-    adjust_screen(e);
+    adjust_screen_cursor(e);
 }
 
 void insert_spaces(Editor *editor) {
-    size_t effective_left = get_cursor_index(editor) - editor->line_start[editor->cursor_y];
+    size_t effective_left = get_cursor_index(editor) - editor->lines[editor->cursor_y].start;
     size_t new_left = ((effective_left / TAB_SIZE) + 1) * TAB_SIZE;
     for(size_t i = effective_left; i < new_left; i++) {
         insert(editor, ' ');
@@ -384,5 +435,20 @@ gboolean handle_key_press(GtkGLArea *area,
     last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
 
     gtk_gl_area_queue_render(area);
+    return TRUE;
+}
+
+#define SCROLL_SPEED 10
+gboolean handle_scroll(
+    GtkEventControllerScroll* self,
+    gdouble dx,
+    gdouble dy,
+    gpointer user_data
+) {
+    (void) user_data;
+    viewport_pos[0] += SCROLL_SPEED * dx;
+    viewport_pos[1] += SCROLL_SPEED * dy;
+    adjust_screen_text_area(&main_editor);
+    layout_updated = true;
     return TRUE;
 }

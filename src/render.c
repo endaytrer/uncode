@@ -119,7 +119,7 @@ void realize(GtkGLArea *area) {
     printf("OpenGL Version: %d.%d\n", major, minor);
 
     font_tex = freetype_init();
-
+    calculate_render_length(&main_editor);
     // init_editor(&main_editor);
 
     // compile and link shader

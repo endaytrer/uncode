@@ -5,7 +5,7 @@ uniform vec4 bg_color;
 uniform float time;
 
 void main() {
-    float T = 1;
+    float T = 1.5;
     float PI = 3.14159265;
     float STRENGTH = 20;
     float omega = 2.0 * PI / T;

@@ -15,7 +15,11 @@ typedef struct {
     size_t cursor_x;
     size_t cursor_y;
 
-    size_t line_start[MAX_LINES + 1];
+    struct {
+        size_t start;
+        float render_length;
+    } lines[MAX_LINES + 1];
+
     size_t num_lines;
 
 } Editor;
@@ -23,10 +27,19 @@ typedef struct {
 extern Editor main_editor;
 
 void init_editor(Editor *editor, char *file);
+void calculate_render_length(Editor *editor);
 void calculate(Editor *editor);
-gboolean handle_key_press(GtkGLArea *area,
-                      guint keyval,
-                      guint keycode,
-                      GdkModifierType state,
-                      GtkEventControllerKey *event_controller);
+gboolean handle_key_press(
+    GtkGLArea *area,
+    guint keyval,
+    guint keycode,
+    GdkModifierType state,
+    GtkEventControllerKey *event_controller
+);
+gboolean handle_scroll(
+    GtkEventControllerScroll* self,
+    gdouble dx,
+    gdouble dy,
+    gpointer user_data
+);
 #endif // _EDITOR_H

@@ -30,11 +30,15 @@ UncodeAppWindow *uncode_app_window_new(UncodeApp *app){
     g_signal_connect(gl_area, "unrealize", G_CALLBACK(unrealize), NULL);
     g_signal_connect(gl_area, "render", G_CALLBACK(render), NULL);
 
-    GtkEventController *controller = gtk_event_controller_key_new();
+    GtkEventController *key_controller = gtk_event_controller_key_new();
+    g_signal_connect_object(key_controller, "key-pressed", G_CALLBACK(handle_key_press), gl_area, G_CONNECT_SWAPPED);
 
-    g_signal_connect_object(controller, "key-pressed", G_CALLBACK(handle_key_press), gl_area, G_CONNECT_SWAPPED);
-    gtk_widget_add_controller(GTK_WIDGET(win), controller);
 
+    GtkEventController *scroll_controller = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+    g_signal_connect_object(scroll_controller, "scroll", G_CALLBACK(handle_scroll), gl_area, G_CONNECT_SWAPPED);
+
+    gtk_widget_add_controller(GTK_WIDGET(win), key_controller);
+    gtk_widget_add_controller(GTK_WIDGET(win), scroll_controller);
     gtk_window_set_child(GTK_WINDOW(win), gl_area);
     return win;
 }
