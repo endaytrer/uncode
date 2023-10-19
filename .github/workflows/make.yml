@@ -2,9 +2,9 @@ name: Make
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "gles" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "gles" ]
 
 jobs:
   build:
