@@ -102,7 +102,7 @@ size_t get_cursor_index(Editor *editor) {
 
 
 void get_cursor_pos(Editor *editor, float *x, float *y) {
-    *y = editor->cursor_y * line_height + 5;
+    *y = editor->cursor_y * line_height + 5 * viewport_scale;
     size_t line_start = editor->lines[editor->cursor_y].start;
     size_t effective_left = get_cursor_index(editor) - line_start;
     *x = 0;
@@ -112,10 +112,8 @@ void get_cursor_pos(Editor *editor, float *x, float *y) {
     }
 }
 
-bool layout_updated = true;
-float text_area_size[2] = {0, 0};
 void get_text_area_size(Editor *editor, float *w, float *h) {
-    *h = editor->num_lines * line_height;
+    *h = editor->num_lines * line_height + 5 * viewport_scale;
     *w = 0;
     for (size_t i = 0; i < editor->num_lines; i++) {
         if (editor->lines[i].render_length > *w) {
@@ -124,6 +122,7 @@ void get_text_area_size(Editor *editor, float *w, float *h) {
     }
 }
 
+bool layout_updated = true;
 void calculate(Editor *editor) {
     int hash = hash_size();
     if (!layout_updated && hash == prev_viewport_size_hash) return;
@@ -136,21 +135,18 @@ void calculate(Editor *editor) {
     num_cursors = 0;
     unsigned int accumulated_width = 0, accumulated_height = 0;
     int letter_spacing = 0;
-    cursor_size[0] = CURSOR_WIDTH;
+    cursor_size[0] = CURSOR_WIDTH * viewport_scale;
     cursor_size[1] = line_height;
-    text_area_size[0] = 0;
-    text_area_size[1] = 0;
     if (editor->size == 0) return;
 
     get_cursor_pos(editor, cursors[0].pos, cursors[0].pos + 1);
 
-    if (cursors[0].pos[0] <= viewport_pos[0] + viewport_size[0] &&
-        cursors[0].pos[0] + cursor_size[0] >= viewport_pos[0] &&
-        cursors[0].pos[1] <= viewport_pos[1] + viewport_size[1] &&
-        cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1]) {
+    if (cursors[0].pos[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
+        cursors[0].pos[0] + cursor_size[0] >= viewport_pos[0] * viewport_scale &&
+        cursors[0].pos[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
+        cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1] * viewport_scale) {
         num_cursors = 1;
     }
-    get_text_area_size(editor, text_area_size, text_area_size + 1);
 
     for (size_t i = 0; i < editor->size; ++i) {
         size_t index = (size_t) editor->text[i];
@@ -172,10 +168,10 @@ void calculate(Editor *editor) {
         accumulated_width += char_params[index].advance_x + letter_spacing;
 
         // if out of bound, don't render it
-        if (calculated_characters[calculated_character_size].pos[0] > viewport_pos[0] + viewport_size[0] ||
-            calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] ||
-            calculated_characters[calculated_character_size].pos[1] > viewport_pos[1] + viewport_size[1] ||
-            calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1]
+        if (calculated_characters[calculated_character_size].pos[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale ||
+            calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] * viewport_scale ||
+            calculated_characters[calculated_character_size].pos[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale||
+            calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1] * viewport_scale
             ) {
                 continue;
         }
@@ -188,17 +184,17 @@ void calculate(Editor *editor) {
 void adjust_screen_text_area(Editor *editor) {
     float w, h;
     get_text_area_size(editor, &w, &h);
-    if (w < viewport_size[0])
+    if (w < viewport_size[0] * viewport_scale)
         viewport_pos[0] = 0;
-    else if (viewport_pos[0] + viewport_size[0] > w)
-        viewport_pos[0] = w - viewport_size[0];
+    else if ((viewport_pos[0] + viewport_size[0]) * viewport_scale > w)
+        viewport_pos[0] = w / viewport_scale - viewport_size[0];
     else if (viewport_pos[0] < 0)
         viewport_pos[0] = 0;
     
     if (h < viewport_size[1])
         viewport_pos[1] = 0;
-    else if (viewport_pos[1] + viewport_size[1] > h)
-        viewport_pos[1] = h - viewport_size[1];
+    else if ((viewport_pos[1] + viewport_size[1]) * viewport_scale > h)
+        viewport_pos[1] = h / viewport_scale - viewport_size[1];
     else if (viewport_pos[1] < 0)
         viewport_pos[1] = 0;
 }
@@ -206,15 +202,15 @@ void adjust_screen_text_area(Editor *editor) {
 void adjust_screen_cursor(Editor *editor) {
     float x, y;
     get_cursor_pos(editor, &x, &y);
-    if (x < viewport_pos[0])
-        viewport_pos[0] = x;
-    if (x + cursor_size[0] > viewport_pos[0] + viewport_size[0])
-        viewport_pos[0] = x + cursor_size[0] - viewport_size[0];
+    if (x < viewport_pos[0] * viewport_scale)
+        viewport_pos[0] = x / viewport_scale;
+    if (x + cursor_size[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale)
+        viewport_pos[0] = (x + cursor_size[0]) / viewport_scale - viewport_size[0];
         
-    if (y < viewport_pos[1])
-        viewport_pos[1] = y;
-    if (y + cursor_size[1] > viewport_pos[1] + viewport_size[1])
-        viewport_pos[1] = y + cursor_size[1] - viewport_size[1];
+    if (y < viewport_pos[1] * viewport_scale)
+        viewport_pos[1] = y / viewport_scale;
+    if (y + cursor_size[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale)
+        viewport_pos[1] = (y + cursor_size[1]) / viewport_scale - viewport_size[1];
     adjust_screen_text_area(editor);
 }
 void cursor_up(Editor *editor) {
