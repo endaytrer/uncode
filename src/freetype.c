@@ -1,6 +1,7 @@
 #include "freetype.h"
 #define PRINTABLE_START 32
 #define PRINTABLE_END 127
+#include "render.h"
 
 FT_Library lib;
 FT_Face face;
@@ -17,7 +18,7 @@ GLuint freetype_init(void) {
         exit(-1);
     }
 
-    if (FT_Set_Char_Size(face, 0, FONT_SIZE_PT * 64, PPI, PPI)) {
+    if (FT_Set_Char_Size(face, 0, FONT_SIZE_PT * viewport_scale * 64, PPI, PPI)) {
         fprintf(stderr, "Could not set char size\n");
         exit(-1);
     }
