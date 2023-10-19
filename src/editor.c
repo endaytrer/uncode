@@ -379,7 +379,6 @@ gboolean handle_key_press(GtkGLArea *area,
                       guint keycode,
                       GdkModifierType state,
                       GtkEventControllerKey *event_controller) {
-
     (void)keycode;
     (void)event_controller;
     if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) {
