@@ -9,7 +9,7 @@
 #define MAX_LINES 4095
 #define BG_COLOR {0.15, 0.15, 0.15}
 #define FG_COLOR {1.0, 1.0, 1.0}
-#define CURSOR_COLOR {0.75, 0.95, 1.0}
+#define CURSOR_COLOR {0.75, 0.95, 1.0, 1.0}
 #define TAB_SIZE 4
 
 typedef struct {
@@ -35,7 +35,7 @@ extern bool layout_updated;
 void init_editor(Editor *editor, char *file);
 void calculate_render_length(Editor *editor);
 void adjust_screen_text_area(Editor *editor);
-void calculate(Editor *editor);
+void calculate(Editor *editor, float time_since_key_pressed_sec);
 gboolean handle_key_press(
     GtkGLArea *area,
     guint keyval,

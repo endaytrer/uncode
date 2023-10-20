@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <math.h>
 
 #include "editor.h"
 #include "render.h"
@@ -9,13 +10,13 @@
 Glyph calculated_characters[CHAR_CAPACITY];
 size_t calculated_character_size = 0;
 
-Cursor cursors[MAX_CURSORS];
-size_t num_cursors = 1;
+Rect rects[MAX_RECTS];
+size_t num_rects = 0;
 
 int line_height;
 
 float cursor_size[2];
-float cursor_color[3] = CURSOR_COLOR;
+float cursor_color[4] = CURSOR_COLOR;
 
 int viewport_size[2];
 float viewport_pos[2] = {0, 0};
@@ -124,28 +125,44 @@ void get_text_area_size(Editor *editor, float *w, float *h) {
 }
 
 bool layout_updated = true;
-void calculate(Editor *editor) {
-    int hash = hash_size();
-    if (!layout_updated && hash == prev_viewport_size_hash) return;
+void calculate(Editor *editor, float time_since_key_pressed_sec) {
 
     line_height = viewport_scale * ((FONT_SIZE_PT * PPI) >> 6);
 
-    layout_updated = false;
+    num_rects = 0;
+    float cursor_x, cursor_y;
+    get_cursor_pos(editor, &cursor_x, &cursor_y);
+
+    if (cursor_x <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
+        cursor_x + cursor_size[0] >= viewport_pos[0] * viewport_scale &&
+        cursor_y <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
+        cursor_y + cursor_size[1] >= viewport_pos[1] * viewport_scale) {
+
+        num_rects = 1;
+        // calculate blinking color;
+        const float T = 1.5f;
+        const float PI = 3.14159265f;
+        const float STRENGTH = 20.0f;
+        const float OMEGA = 2.0 * PI / T;
+
+        float alpha = cosf(OMEGA * time_since_key_pressed_sec);
+        alpha = 1.0 / (1.0 + expf(-STRENGTH * alpha));
+
+        rects[0] = (Rect) {
+            .size = {CURSOR_WIDTH * viewport_scale, line_height},
+            .color = {cursor_color[0], cursor_color[1], cursor_color[2], alpha},
+            .position = {cursor_x, cursor_y}
+        };
+    }
+
+    int hash = hash_size();
+    if (!layout_updated && hash == prev_viewport_size_hash) return;
     prev_viewport_size_hash = hash;
+
+    layout_updated = false;
     calculated_character_size = 0;
-    num_cursors = 0;
-    cursor_size[0] = CURSOR_WIDTH * viewport_scale;
-    cursor_size[1] = line_height;
     if (editor->size == 0) return;
 
-    get_cursor_pos(editor, cursors[0].pos, cursors[0].pos + 1);
-
-    if (cursors[0].pos[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
-        cursors[0].pos[0] + cursor_size[0] >= viewport_pos[0] * viewport_scale &&
-        cursors[0].pos[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
-        cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1] * viewport_scale) {
-        num_cursors = 1;
-    }
     int start = viewport_pos[1] * viewport_scale / line_height - 2;
     size_t line = start < 0 ? 0 : start;
     size_t end = (viewport_pos[1] + viewport_size[1]) * viewport_scale / line_height + 1;
@@ -161,18 +178,18 @@ void calculate(Editor *editor) {
             calculated_characters[calculated_character_size] = (Glyph) {
                 .uv_offset_x = char_params[index].offset,
                 .uv_size = {char_params[index].uv_width, char_params[index].uv_height},
-                .pos = {accumulated_width + char_params[index].bitmap_left, top + line_height - char_params[index].bitmap_top},
+                .position = {accumulated_width + char_params[index].bitmap_left, top + line_height - char_params[index].bitmap_top},
                 .size = {char_params[index].width, char_params[index].height},
                 .fg_color = FG_COLOR
             };
             accumulated_width += char_params[index].advance_x;
 
-            if (calculated_characters[calculated_character_size].pos[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale) {
+            if (calculated_characters[calculated_character_size].position[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale) {
                 break;
             }
-            if (calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] * viewport_scale ||
-                calculated_characters[calculated_character_size].pos[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale ||
-                calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1] * viewport_scale
+            if (calculated_characters[calculated_character_size].position[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] * viewport_scale ||
+                calculated_characters[calculated_character_size].position[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale ||
+                calculated_characters[calculated_character_size].position[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1] * viewport_scale
                 ) {
                 continue;
             }
