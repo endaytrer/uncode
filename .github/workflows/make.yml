@@ -1,0 +1,19 @@
+name: Make
+
+on:
+  push:
+    branches: [ "main", "gles" ]
+  pull_request:
+    branches: [ "main", "gles" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: install 
+      run: sudo apt install libadwaita-1-dev libgtk-4-dev libglew-dev
+    - name: make
+      run: make

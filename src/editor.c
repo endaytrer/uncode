@@ -2,20 +2,25 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <math.h>
 
 #include "editor.h"
 #include "render.h"
 #include "freetype.h"
-Glyph calculated_characters[CHAR_CAPACITY];
-size_t calculated_character_size = 0;
+Glyph chars[MAX_CHARS];
+size_t num_chars = 0;
 
-Cursor cursors[MAX_CURSORS];
-size_t num_cursors = 1;
+
+Glyph overchars[MAX_OVERCHARS];
+size_t num_overchars = 0;
+
+Rect rects[MAX_RECTS];
+size_t num_rects = 0;
 
 int line_height;
 
 float cursor_size[2];
-float cursor_color[3] = CURSOR_COLOR;
+float cursor_color[4] = CURSOR_COLOR;
 
 int viewport_size[2];
 float viewport_pos[2] = {0, 0};
@@ -27,18 +32,8 @@ int prev_viewport_size_hash = 0;
 int hash_size(void) {
     return viewport_size[0] * 28367 + viewport_size[1];
 }
-Editor main_editor = {
-    .text = 0,
-    .size = 0, // including trailing '\0'
-    .capacity = 0,
+Editor main_editor = {0};
 
-    .cursor_x = 0,
-    .cursor_y = 0,
-
-    .lines = {},
-    .num_lines = 0,
-
-};
 extern char *filename;
 void init_editor(Editor *editor, char *file) {
     if (!file) {
@@ -73,8 +68,8 @@ void init_editor(Editor *editor, char *file) {
         munmap(map, s.st_size);
         close(fd);
     }
-    editor->cursor_x = 0;
-    editor->cursor_y = 0;
+    editor->cursor.x = 0;
+    editor->cursor.y = 0;
 
     // build line buffer
     editor->num_lines = 0;
@@ -93,20 +88,26 @@ void calculate_render_length(Editor *editor) {
         }
     }
 }
-size_t get_cursor_index(Editor *editor) {
-    assert(editor->cursor_y < editor->num_lines);
+size_t get_cursor_index(Editor *editor, Cursor *cursor) {
+    assert(cursor->y < editor->num_lines);
 
-    size_t line_start = editor->lines[editor->cursor_y].start;
-    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
-    if (editor->cursor_x >= line_size) return line_start + line_size - 1;
-    return line_start + editor->cursor_x;
+    size_t line_start = editor->lines[cursor->y].start;
+    size_t line_size = editor->lines[cursor->y + 1].start - line_start;
+    if (cursor->x >= line_size) return line_start + line_size - 1;
+    return line_start + cursor->x;
+}
+size_t get_effective_left(Editor *editor, Cursor *cursor) {
+    size_t line_start = editor->lines[cursor->y].start;
+    size_t line_size = editor->lines[cursor->y + 1].start - line_start;
+    if (cursor->x >= line_size) return line_size - 1;
+    return cursor->x;
 }
 
-void get_cursor_pos(Editor *editor, float *x, float *y) {
-    *y = editor->cursor_y * line_height + CURSOR_OFFSET_Y * viewport_scale;
-    size_t line_start = editor->lines[editor->cursor_y].start;
-    size_t effective_left = get_cursor_index(editor) - line_start;
-    *x = 0;
+void get_cursor_pos(Editor *editor, Cursor *cursor, float *x, float *y) {
+    *y = cursor->y * line_height + CURSOR_OFFSET_Y * viewport_scale;
+    size_t line_start = editor->lines[cursor->y].start;
+    size_t effective_left = get_effective_left(editor, cursor);
+    *x = MARGIN_LEFT * viewport_scale;
     for (size_t i = 0; i < effective_left; i++) {
         char ch = editor->text[line_start + i];
         *x += char_params[(size_t)ch].advance_x;
@@ -121,64 +122,260 @@ void get_text_area_size(Editor *editor, float *w, float *h) {
             *w = editor->lines[i].render_length;
         }
     }
+    *w += MARGIN_LEFT * viewport_scale;
+}
+
+/**
+ * return true if they are different
+ */
+bool get_s1_s2(Editor *e, Cursor **s1, Cursor **s2) {
+    Cursor *s_1, *s_2;
+    bool ans = true;
+    if (e->selection_start.y == e->cursor.y) {
+        size_t cursor_x = get_effective_left(e, &e->cursor);
+        if (e->selection_start.x < cursor_x) {
+            s_1 = &e->selection_start;
+            s_2 = &e->cursor;
+        } else {
+            s_1 = &e->cursor;
+            s_2 = &e->selection_start;
+            if (e->selection_start.x == cursor_x)
+                ans = false;
+        }
+    } else {
+        if (e->selection_start.y < e->cursor.y) {
+            s_1 = &e->selection_start;
+            s_2 = &e->cursor;
+        } else {
+            s_1 = &e->cursor;
+            s_2 = &e->selection_start;
+        }
+    }
+    *s1 = s_1;
+    *s2 = s_2;
+    return ans;
 }
 
 bool layout_updated = true;
-void calculate(Editor *editor) {
-    int hash = hash_size();
-    if (!layout_updated && hash == prev_viewport_size_hash) return;
+void calculate(Editor *editor, float time_since_key_pressed_sec) {
 
     line_height = viewport_scale * ((FONT_SIZE_PT * PPI) >> 6);
-
-    layout_updated = false;
-    prev_viewport_size_hash = hash;
-    calculated_character_size = 0;
-    num_cursors = 0;
     cursor_size[0] = CURSOR_WIDTH * viewport_scale;
     cursor_size[1] = line_height;
-    if (editor->size == 0) return;
+    float cursor_x, cursor_y;
+    get_cursor_pos(editor, &editor->cursor, &cursor_x, &cursor_y);
 
-    get_cursor_pos(editor, cursors[0].pos, cursors[0].pos + 1);
 
-    if (cursors[0].pos[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
-        cursors[0].pos[0] + cursor_size[0] >= viewport_pos[0] * viewport_scale &&
-        cursors[0].pos[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
-        cursors[0].pos[1] + cursor_size[1] >= viewport_pos[1] * viewport_scale) {
-        num_cursors = 1;
+    { // calculate cursor every time to avoid out-dated cursor
+
+        // calculate blinking color;
+        const float T = 1.5f;
+        const float PI = 3.14159265f;
+        const float STRENGTH = 20.0f;
+        const float OMEGA = 2.0 * PI / T;
+
+        float alpha = cosf(OMEGA * time_since_key_pressed_sec);
+        alpha = 1.0 / (1.0 + expf(-STRENGTH * alpha));
+        // we need render cursor above rect of current line, but below line number region, so make it index 1;
+
+        rects[1] = (Rect) {
+            .size = {cursor_size[0], cursor_size[1]},
+            .color = {cursor_color[0], cursor_color[1], cursor_color[2], alpha},
+            .position = {cursor_x, cursor_y}
+        };
     }
+    
+
+    int hash = hash_size();
+    if (!layout_updated && hash == prev_viewport_size_hash) return;
+    prev_viewport_size_hash = hash;
+    layout_updated = false;
+
+    num_rects = 2;
+    num_chars = 0;
+    num_overchars = 0;
+    if (editor->size == 0) return;
+    // rect of current line
+
+    rects[0] = (Rect) {
+        .size = {(viewport_size[0] - MARGIN_LEFT + NUMBER_MARGIN_RIGHT) * viewport_scale, line_height},
+        .color = CURRENT_LINE_COLOR,
+        .position = {(viewport_pos[0] + MARGIN_LEFT - NUMBER_MARGIN_RIGHT) * viewport_scale, cursor_y}
+    };
+
+    // rect of selections
+    if (editor->mode == Selection) {
+        // inline selection
+        Cursor *s_1, *s_2;
+        float s1x, s2x;
+        if (editor->selection_start.y == editor->cursor.y) {
+            float sy;
+            size_t x_start = get_effective_left(editor, &editor->selection_start);
+            size_t x_end = get_effective_left(editor, &editor->cursor);
+            bool flag = true;
+            if (x_start < x_end) {
+                s_1 = &editor->selection_start;
+                get_cursor_pos(editor, s_1, &s1x, &sy);
+                s_2 = &editor->cursor;
+                s2x = cursor_x;
+            } else if (x_start > x_end) {
+                s_1 = &editor->cursor;
+                s1x = cursor_x;
+                s_2 = &editor->selection_start;
+                get_cursor_pos(editor, s_2, &s2x, &sy);
+            } else {
+                flag = false;
+            }
+            if (flag) {
+                rects[num_rects] = (Rect) {
+                    .size = {s2x - s1x, line_height},
+                    .color = SELECTION_COLOR,
+                    .position = {s1x, cursor_y}
+                };
+
+                if (rects[num_rects].position[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
+                    rects[num_rects].position[0] + rects[num_rects].size[0] >= viewport_pos[0] * viewport_scale &&
+                    rects[num_rects].position[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
+                    rects[num_rects].position[1] + rects[num_rects].size[1] >= viewport_pos[1] * viewport_scale
+                    ) {
+                    num_rects++;
+                }
+            }
+        } else {
+            float s1y, s2y;
+            if (editor->selection_start.y < editor->cursor.y) {
+                s_1 = &editor->selection_start;
+                get_cursor_pos(editor, s_1, &s1x, &s1y);
+                s_2 = &editor->cursor;
+                s2x = cursor_x;
+                s2y = cursor_y;
+            } else {
+                s_1 = &editor->cursor;
+                s1x = cursor_x;
+                s1y = cursor_y;
+                s_2 = &editor->selection_start;
+                get_cursor_pos(editor, s_2, &s2x, &s2y);
+            }
+            rects[num_rects] = (Rect) {
+                .size = {(viewport_size[0] + viewport_pos[0]) * viewport_scale - s1x, line_height},
+                .color = SELECTION_COLOR,
+                .position = {s1x, s1y}
+            };
+
+            if (rects[num_rects].position[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
+                rects[num_rects].position[0] + rects[num_rects].size[0] >= viewport_pos[0] * viewport_scale &&
+                rects[num_rects].position[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
+                rects[num_rects].position[1] + rects[num_rects].size[1] >= viewport_pos[1] * viewport_scale
+                ) {
+                num_rects++;
+            }
+            for (size_t i = s_1->y + 1; i < s_2->y; i++) {
+                rects[num_rects] = (Rect) {
+                    .size = {(viewport_pos[0] + viewport_size[0]) * viewport_scale, line_height},
+                    .color = SELECTION_COLOR,
+                    .position = {MARGIN_LEFT * viewport_scale, i * line_height + CURSOR_OFFSET_Y * viewport_scale}
+                }; 
+                if (rects[num_rects].position[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
+                    rects[num_rects].position[0] + rects[num_rects].size[0] >= viewport_pos[0] * viewport_scale &&
+                    rects[num_rects].position[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
+                    rects[num_rects].position[1] + rects[num_rects].size[1] >= viewport_pos[1] * viewport_scale
+                    ) {
+                    num_rects++;
+                }
+            }
+            rects[num_rects] = (Rect) {
+                .size = {s2x - (MARGIN_LEFT) * viewport_scale, line_height},
+                .color = SELECTION_COLOR,
+                .position = {MARGIN_LEFT * viewport_scale, s2y}
+            };
+
+            if (rects[num_rects].position[0] <= (viewport_pos[0] + viewport_size[0]) * viewport_scale &&
+                rects[num_rects].position[0] + rects[num_rects].size[0] >= viewport_pos[0] * viewport_scale &&
+                rects[num_rects].position[1] <= (viewport_pos[1] + viewport_size[1]) * viewport_scale &&
+                rects[num_rects].position[1] + rects[num_rects].size[1] >= viewport_pos[1] * viewport_scale
+                ) {
+                num_rects++;
+            }
+        }
+    }
+
+    // rect of line numbers
+
+    rects[num_rects++] = (Rect) {
+        .size = {(MARGIN_LEFT - NUMBER_MARGIN_RIGHT) * viewport_scale, viewport_size[1] * viewport_scale},
+        .color = NUMBER_BG_COLOR,
+        .position = {viewport_pos[0] * viewport_scale, viewport_pos[1] * viewport_scale}
+    };
+
+
     int start = viewport_pos[1] * viewport_scale / line_height - 2;
     size_t line = start < 0 ? 0 : start;
     size_t end = (viewport_pos[1] + viewport_size[1]) * viewport_scale / line_height + 1;
     if (editor->num_lines - 1 < end)
         end = editor->num_lines - 1;
     for (; line <= end; line++) {
-        size_t accumulated_width = 0;
+        size_t accumulated_width = MARGIN_LEFT * viewport_scale;
         size_t top = line * line_height;
         for (size_t i = editor->lines[line].start; i < editor->lines[line + 1].start; i++) {
 
             size_t index = (size_t) editor->text[i];
 
-            calculated_characters[calculated_character_size] = (Glyph) {
+            chars[num_chars] = (Glyph) {
                 .uv_offset_x = char_params[index].offset,
                 .uv_size = {char_params[index].uv_width, char_params[index].uv_height},
-                .pos = {accumulated_width + char_params[index].bitmap_left, top + line_height - char_params[index].bitmap_top},
+                .position = {accumulated_width + char_params[index].bitmap_left, top + line_height - char_params[index].bitmap_top},
                 .size = {char_params[index].width, char_params[index].height},
                 .fg_color = FG_COLOR
             };
             accumulated_width += char_params[index].advance_x;
 
-            if (calculated_characters[calculated_character_size].pos[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale) {
+            if (chars[num_chars].position[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale) {
                 break;
             }
-            if (calculated_characters[calculated_character_size].pos[0] + calculated_characters[calculated_character_size].size[0] < viewport_pos[0] * viewport_scale ||
-                calculated_characters[calculated_character_size].pos[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale ||
-                calculated_characters[calculated_character_size].pos[1] + calculated_characters[calculated_character_size].size[1] < viewport_pos[1] * viewport_scale
+            if (chars[num_chars].position[0] + chars[num_chars].size[0] < viewport_pos[0] * viewport_scale ||
+                chars[num_chars].position[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale ||
+                chars[num_chars].position[1] + chars[num_chars].size[1] < viewport_pos[1] * viewport_scale
                 ) {
                 continue;
             }
 
-            calculated_character_size++;
-            assert(calculated_character_size <= CHAR_CAPACITY);
+            num_chars++;
+            assert(num_chars <= MAX_CHARS);
+        }
+        char line_number[5]; // since max lines is 4096, use 5 bytes
+        int n = snprintf(line_number, 5, "%ld", line + 1);
+        size_t right = (MARGIN_LEFT - NUMBER_PADDING - NUMBER_MARGIN_RIGHT) * viewport_scale;
+        for (int i = n - 1; i >= 0; i--) {
+            size_t index = (size_t) line_number[i];
+
+            overchars[num_overchars] = (Glyph) {
+                .uv_offset_x = char_params[index].offset,
+                .uv_size = {char_params[index].uv_width, char_params[index].uv_height},
+                .position = {viewport_pos[0] * viewport_scale + right - char_params[index].advance_x + char_params[index].bitmap_left,
+                            top + line_height - char_params[index].bitmap_top},
+                .size = {char_params[index].width, char_params[index].height},
+                .fg_color = NUMBER_COLOR
+            };
+
+            right -= char_params[index].advance_x;
+
+            if (overchars[num_overchars].position[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale ||
+                overchars[num_overchars].position[0] + overchars[num_overchars].size[0] < viewport_pos[0] * viewport_scale ||
+                overchars[num_overchars].position[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale ||
+                overchars[num_overchars].position[1] + overchars[num_overchars].size[1] < viewport_pos[1] * viewport_scale
+                ) {
+                continue;
+            }
+
+            if (line == editor->cursor.y) {
+                const float cnc[] = CURRENT_NUMBER_COLOR;
+                overchars[num_overchars].fg_color[0] = cnc[0];
+                overchars[num_overchars].fg_color[1] = cnc[1];
+                overchars[num_overchars].fg_color[2] = cnc[2];
+            }
+
+            num_overchars++;
+            assert(num_overchars <= MAX_OVERCHARS);
         }
     }
 }
@@ -201,11 +398,12 @@ void adjust_screen_text_area(Editor *editor) {
         viewport_pos[1] = 0;
 }
 
-void adjust_screen_cursor(Editor *editor) {
+void adjust_screen_cursor(Editor *editor, Cursor *cursor) {
+    adjust_screen_text_area(editor);
     float x, y;
-    get_cursor_pos(editor, &x, &y);
-    if (x < viewport_pos[0] * viewport_scale)
-        viewport_pos[0] = x / viewport_scale;
+    get_cursor_pos(editor, cursor, &x, &y);
+    if (x < (viewport_pos[0] + MARGIN_LEFT) * viewport_scale)
+        viewport_pos[0] = x / viewport_scale - MARGIN_LEFT;
     if (x + cursor_size[0] > (viewport_pos[0] + viewport_size[0]) * viewport_scale)
         viewport_pos[0] = (x + cursor_size[0]) / viewport_scale - viewport_size[0];
         
@@ -213,108 +411,63 @@ void adjust_screen_cursor(Editor *editor) {
         viewport_pos[1] = y / viewport_scale;
     if (y + cursor_size[1] > (viewport_pos[1] + viewport_size[1]) * viewport_scale)
         viewport_pos[1] = (y + cursor_size[1]) / viewport_scale - viewport_size[1];
-    adjust_screen_text_area(editor);
 }
 void cursor_up(Editor *editor) {
-    if (editor->cursor_y == 0)
-        editor->cursor_x = 0;
+    if (editor->cursor.y == 0)
+        editor->cursor.x = 0;
     else
-        editor->cursor_y -= 1;
+        editor->cursor.y -= 1;
 
-    adjust_screen_cursor(editor);
 }
 void cursor_down(Editor *editor) {
-    if (editor->cursor_y == editor->num_lines - 1) {
-        size_t line_start = editor->lines[editor->cursor_y].start;
-        size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
-        editor->cursor_x = line_size - 1;
+    if (editor->cursor.y == editor->num_lines - 1) {
+        size_t line_start = editor->lines[editor->cursor.y].start;
+        size_t line_size = editor->lines[editor->cursor.y + 1].start - line_start;
+        editor->cursor.x = line_size - 1;
     } else
-        editor->cursor_y += 1;
+        editor->cursor.y += 1;
 
-    adjust_screen_cursor(editor);
 }
 void cursor_left(Editor *editor) {
-    size_t line_start = editor->lines[editor->cursor_y].start;
-    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
-    if ((editor->cursor_x == 0 || line_size == 1) && editor->cursor_y > 0) { // at line start, wrap to previous line
+    size_t line_start = editor->lines[editor->cursor.y].start;
+    size_t line_size = editor->lines[editor->cursor.y + 1].start - line_start;
+    if ((editor->cursor.x == 0 || line_size == 1) && editor->cursor.y > 0) { // at line start, wrap to previous line
     
-        editor->cursor_y--;
-        line_start = editor->lines[editor->cursor_y].start;
-        line_size = editor->lines[editor->cursor_y + 1].start - line_start;
-        editor->cursor_x = line_size - 1;
-    } else if (editor->cursor_x > 0 && line_size > 1) {
-        if (editor->cursor_x >= line_size)
-            editor->cursor_x = line_size - 2;
+        editor->cursor.y--;
+        line_start = editor->lines[editor->cursor.y].start;
+        line_size = editor->lines[editor->cursor.y + 1].start - line_start;
+        editor->cursor.x = line_size - 1;
+    } else if (editor->cursor.x > 0 && line_size > 1) {
+        if (editor->cursor.x >= line_size)
+            editor->cursor.x = line_size - 2;
         else {
-            editor->cursor_x--;
+            editor->cursor.x--;
         }
     }
-
-    adjust_screen_cursor(editor);
 }
 void cursor_right(Editor *editor) {
-    size_t line_start = editor->lines[editor->cursor_y].start;
-    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
-    if ((editor->cursor_x >= line_size - 1 || line_size == 1) && editor->cursor_y < editor->num_lines - 1) { // at line end, wrap to next line
-        editor->cursor_y++;
-        editor->cursor_x = 0;
-    } else if (editor->cursor_x < line_size - 1 && line_size > 1) {
-        editor->cursor_x++;
+    size_t line_start = editor->lines[editor->cursor.y].start;
+    size_t line_size = editor->lines[editor->cursor.y + 1].start - line_start;
+    if ((editor->cursor.x >= line_size - 1 || line_size == 1) && editor->cursor.y < editor->num_lines - 1) { // at line end, wrap to next line
+        editor->cursor.y++;
+        editor->cursor.x = 0;
+    } else if (editor->cursor.x < line_size - 1 && line_size > 1) {
+        editor->cursor.x++;
     }
-    adjust_screen_cursor(editor);
 }
 
 void cursor_home(Editor *editor) {
-    editor->cursor_x = 0;
-    adjust_screen_cursor(editor);
+    editor->cursor.x = 0;
 }
 
 void cursor_end(Editor *editor) {
-    size_t line_start = editor->lines[editor->cursor_y].start;
-    size_t line_size = editor->lines[editor->cursor_y + 1].start - line_start;
-    editor->cursor_x = line_size - 1;
-    adjust_screen_cursor(editor);
+    size_t line_start = editor->lines[editor->cursor.y].start;
+    size_t line_size = editor->lines[editor->cursor.y + 1].start - line_start;
+    editor->cursor.x = line_size - 1;
 }
 
-void insert(Editor *e, char ch) {
-    // Insert at cursor
-
-    size_t pos = get_cursor_index(e);
-    if (e->size == e->capacity) {
-        size_t new_cap = e->capacity * 2;
-        e->text = realloc(e->text, new_cap);
-        e->capacity = new_cap;
-    }
-    memmove(e->text + pos + 1, e->text + pos, e->size - pos);
-    e->text[pos] = ch;
-    e->size += 1;
-    // recalculate every line start after current line to +1;
-    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++)
-        e->lines[i].start++;
-    
-    e->lines[e->cursor_y].render_length += char_params[(size_t)ch].advance_x;
-    if (ch == '\n') {
-        assert(e->num_lines < MAX_LINES);
-        memmove(e->lines + e->cursor_y + 2, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
-        e->lines[e->cursor_y + 1].start = pos + 1;
-        // calculate render length before
-        float current_length = 0;
-        for (size_t i = e->lines[e->cursor_y].start; i <= pos; i++) {
-            current_length += char_params[(size_t)e->text[i]].advance_x;
-        }
-        e->lines[e->cursor_y + 1].render_length = e->lines[e->cursor_y].render_length - current_length;
-        e->lines[e->cursor_y].render_length = current_length;
-
-        e->num_lines++;
-        e->cursor_x = 0;
-        e->cursor_y++;
-    } else {
-        e->cursor_x = pos - e->lines[e->cursor_y].start + 1;
-    }
-    adjust_screen_cursor(e);
-}
 void delete(Editor *e) {
-    size_t pos = get_cursor_index(e);
+    size_t pos = get_cursor_index(e, &e->cursor);
     if (pos == e->size - 1) return;
     if (e->size <= e->capacity / 2) {
         size_t new_cap = e->capacity / 2;
@@ -326,20 +479,95 @@ void delete(Editor *e) {
     char deleted = e->text[pos];
     memmove(e->text + pos, e->text + pos + 1, e->size - pos);
 
-    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
+    for (size_t i = e->cursor.y + 1; i <= e->num_lines; i++) {
         e->lines[i].start--;
     }
-    e->lines[e->cursor_y].render_length -= char_params[(size_t)deleted].advance_x;
+    e->lines[e->cursor.y].render_length -= char_params[(size_t)deleted].advance_x;
     if (deleted == '\n') {
         e->num_lines--;
-        e->lines[e->cursor_y].render_length += e->lines[e->cursor_y + 1].render_length;
-        memmove(e->lines + e->cursor_y + 1, e->lines + e->cursor_y + 2, (e->num_lines - e->cursor_y) * sizeof(e->lines[0]));
+        e->lines[e->cursor.y].render_length += e->lines[e->cursor.y + 1].render_length;
+        memmove(e->lines + e->cursor.y + 1, e->lines + e->cursor.y + 2, (e->num_lines - e->cursor.y) * sizeof(e->lines[0]));
     }
-    e->cursor_x = pos - e->lines[e->cursor_y].start;
-    adjust_screen_text_area(e);
+    e->cursor.x = pos - e->lines[e->cursor.y].start;
 }
+
+size_t get_selection_size(Editor *e) {
+    Cursor *s_1, *s_2;
+
+    if (get_s1_s2(e, &s_1, &s_2))
+        return get_cursor_index(e, s_2) - get_cursor_index(e, s_1);
+    else
+        return 0;
+}
+void delete_selection(Editor *e) {
+    Cursor *s_1, *s_2;
+    e->cursor.x = get_effective_left(e, &e->cursor);
+    if (get_s1_s2(e, &s_1, &s_2)) {
+        size_t size = get_cursor_index(e, s_2) - get_cursor_index(e, s_1);
+        // TODO: delete at once, will result in significant performance improvement
+        e->cursor = *s_1;
+        for (size_t i = 0; i < size; i++) {
+            delete(e);
+        }
+    } 
+}
+
+void insert(Editor *e, char ch) {
+    // Insert at cursor
+    // if at selection, remove all content in selection;
+    if (e->mode == Selection)
+        delete_selection(e);
+
+    size_t pos = get_cursor_index(e, &e->cursor);
+    if (e->size == e->capacity) {
+        size_t new_cap = e->capacity * 2;
+        e->text = realloc(e->text, new_cap);
+        e->capacity = new_cap;
+    }
+    memmove(e->text + pos + 1, e->text + pos, e->size - pos);
+    e->text[pos] = ch;
+    e->size += 1;
+    // recalculate every line start after current line to +1;
+    for (size_t i = e->cursor.y + 1; i <= e->num_lines; i++)
+        e->lines[i].start++;
+    
+    e->lines[e->cursor.y].render_length += char_params[(size_t)ch].advance_x;
+    if (ch == '\n') {
+        assert(e->num_lines < MAX_LINES);
+        memmove(e->lines + e->cursor.y + 2, e->lines + e->cursor.y + 1, (e->num_lines - e->cursor.y) * sizeof(e->lines[0]));
+        e->lines[e->cursor.y + 1].start = pos + 1;
+        // calculate render length before
+        float current_length = 0;
+        for (size_t i = e->lines[e->cursor.y].start; i <= pos; i++) {
+            current_length += char_params[(size_t)e->text[i]].advance_x;
+        }
+        e->lines[e->cursor.y + 1].render_length = e->lines[e->cursor.y].render_length - current_length;
+        e->lines[e->cursor.y].render_length = current_length;
+
+        e->num_lines++;
+        e->cursor.x = 0;
+        e->cursor.y++;
+    } else {
+        e->cursor.x = pos - e->lines[e->cursor.y].start + 1;
+    }
+    // since inserting character introduces actual mouse motion, adjust screen cursor as well.
+    adjust_screen_cursor(e, &e->cursor);
+}
+
+void handle_delete(Editor *e) {
+    if (e->mode == Selection)
+        delete_selection(e);
+    else
+        delete(e);
+}
+
 void backspace(Editor *e) {
-    size_t pos = get_cursor_index(e);
+    if (e->mode == Selection) {
+        delete_selection(e);
+        return;
+    }
+
+    size_t pos = get_cursor_index(e, &e->cursor);
     if (pos == 0) return;
     pos -= 1;
     if (e->size <= e->capacity / 2) {
@@ -352,30 +580,30 @@ void backspace(Editor *e) {
     char deleted = e->text[pos];
     memmove(e->text + pos, e->text + pos + 1, e->size - pos);
 
-    for (size_t i = e->cursor_y + 1; i <= e->num_lines; i++) {
+    for (size_t i = e->cursor.y + 1; i <= e->num_lines; i++) {
         e->lines[i].start--;
     }
 
-    e->lines[e->cursor_y].render_length -= char_params[(size_t)deleted].advance_x;
+    e->lines[e->cursor.y].render_length -= char_params[(size_t)deleted].advance_x;
     if (deleted == '\n') {
         e->num_lines--;
-        e->lines[e->cursor_y - 1].render_length += e->lines[e->cursor_y].render_length;
-        memmove(e->lines + e->cursor_y, e->lines + e->cursor_y + 1, (e->num_lines - e->cursor_y + 1) * sizeof(e->lines[0]));
-        e->cursor_y--;
-        e->cursor_x = pos - e->lines[e->cursor_y].start;
+        e->lines[e->cursor.y - 1].render_length += e->lines[e->cursor.y].render_length;
+        memmove(e->lines + e->cursor.y, e->lines + e->cursor.y + 1, (e->num_lines - e->cursor.y + 1) * sizeof(e->lines[0]));
+        e->cursor.y--;
+        e->cursor.x = pos - e->lines[e->cursor.y].start;
     } else {
-        e->cursor_x--;
+        e->cursor.x--;
     }
-    adjust_screen_cursor(e);
 }
 
 void insert_spaces(Editor *editor) {
-    size_t effective_left = get_cursor_index(editor) - editor->lines[editor->cursor_y].start;
+    size_t effective_left = get_effective_left(editor, &editor->cursor);
     size_t new_left = ((effective_left / TAB_SIZE) + 1) * TAB_SIZE;
     for(size_t i = effective_left; i < new_left; i++) {
         insert(editor, ' ');
     }
 }
+
 gboolean handle_key_press(GtkGLArea *area,
                       guint keyval,
                       guint keycode,
@@ -387,45 +615,86 @@ gboolean handle_key_press(GtkGLArea *area,
     if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) {
         return FALSE;
     }
+    if (main_editor.mode == Normal) {
+        main_editor.selection_start = main_editor.cursor;
+        main_editor.selection_start.x = get_effective_left(&main_editor, &main_editor.selection_start);
+    }
 
+    bool mouse_motion = false;
     switch (keyval) {
         case GDK_KEY_Up:
+            if (main_editor.mode == Selection && !(state & GDK_SHIFT_MASK)) {
+                Cursor *s1, *s2;
+                main_editor.cursor.x = get_effective_left(&main_editor, &main_editor.cursor);
+                get_s1_s2(&main_editor, &s1, &s2);
+                main_editor.cursor = *s1;
+            } 
             cursor_up(&main_editor);
+            mouse_motion = true;
             break;
-        
+
         case GDK_KEY_Down:
+            if (main_editor.mode == Selection && !(state & GDK_SHIFT_MASK)) {
+                Cursor *s1, *s2;
+                main_editor.cursor.x = get_effective_left(&main_editor, &main_editor.cursor);
+                get_s1_s2(&main_editor, &s1, &s2);
+                main_editor.cursor = *s2;
+            } 
             cursor_down(&main_editor);
+            mouse_motion = true;
             break;
+
         case GDK_KEY_Left:
-            cursor_left(&main_editor);
+            if (main_editor.mode == Selection && !(state & GDK_SHIFT_MASK)) {
+                Cursor *s1, *s2;
+                main_editor.cursor.x = get_effective_left(&main_editor, &main_editor.cursor);
+                get_s1_s2(&main_editor, &s1, &s2);
+                main_editor.cursor = *s1;
+                break;
+            } else
+                cursor_left(&main_editor);
+            mouse_motion = true;
             break;
         
         case GDK_KEY_Right:
-            cursor_right(&main_editor);
+            if (main_editor.mode == Selection && !(state & GDK_SHIFT_MASK)) {
+                Cursor *s1, *s2;
+                main_editor.cursor.x = get_effective_left(&main_editor, &main_editor.cursor);
+                get_s1_s2(&main_editor, &s1, &s2);
+                main_editor.cursor = *s2;
+                break;
+            } else
+                cursor_right(&main_editor);
+            mouse_motion = true;
             break;
 
         case GDK_KEY_Home:
             cursor_home(&main_editor);
+            mouse_motion = true;
             break;
         
         case GDK_KEY_End:
             cursor_end(&main_editor);
+            mouse_motion = true;
             break;
         
         case GDK_KEY_Return:
             insert(&main_editor, '\n');
+            mouse_motion = true;
             break;
 
         case GDK_KEY_BackSpace:
             backspace(&main_editor);
+            mouse_motion = true;
             break;
 
         case GDK_KEY_Delete:
-            delete(&main_editor);
+            handle_delete(&main_editor);
             break;
 
         case GDK_KEY_Tab:
             insert_spaces(&main_editor);
+            mouse_motion = true;
             break;
 
         default:
@@ -433,6 +702,17 @@ gboolean handle_key_press(GtkGLArea *area,
                 insert(&main_editor, (char)keyval);
             else
                 return TRUE;
+    }
+    if (mouse_motion) {
+        if ((state & GDK_SHIFT_MASK) && get_selection_size(&main_editor)) {
+            main_editor.mode = Selection;
+        } else {
+            main_editor.mode = Normal;
+        }
+        adjust_screen_cursor(&main_editor, &main_editor.cursor);
+    } else {
+        main_editor.mode = Normal;
+        adjust_screen_text_area(&main_editor);
     }
     layout_updated = true;
     
@@ -457,6 +737,36 @@ gboolean handle_scroll(
     return TRUE;
 }
 
+void pos_to_cursor_xy(double pos_x, double pos_y, Editor *editor, Cursor *cursor) {
+    int y = (int)(pos_y / line_height);
+    cursor->y = y >= 0 ? (size_t)y : 0;
+    if (cursor->y >= editor->num_lines)
+        cursor->y = editor->num_lines - 1;
+
+    if (pos_x <= 0) {
+        cursor->x = 0;
+    } else {
+        // TODO: replace with binary search, although improvement would be insignificant
+        float char_max_pos = MARGIN_LEFT * viewport_scale;
+        bool rendered = false;
+        for (size_t i = editor->lines[cursor->y].start; i < editor->lines[cursor->y + 1].start; i++) {
+            FT_Long prevhalf = char_params[(size_t)editor->text[i]].advance_x / 2;
+            FT_Long nexthalf = char_params[(size_t)editor->text[i]].advance_x - prevhalf;
+            char_max_pos += prevhalf;
+            if (char_max_pos >= pos_x) {
+                cursor->x = i -  editor->lines[cursor->y].start;
+                rendered = true;
+                break;
+            }
+            char_max_pos += nexthalf;
+        }
+        if (!rendered) {
+            cursor->x = editor->lines[cursor->y + 1].start - editor->lines[cursor->y].start - 1; 
+        }
+    }
+}
+
+bool mouse_pressed = false;
 void handle_mouse_down (
     GtkGesture* self,
     GdkEventSequence* sequence,
@@ -467,37 +777,15 @@ void handle_mouse_down (
     gtk_gesture_get_point(self, sequence, &x, &y);
     x = (x + viewport_pos[0]) * viewport_scale;
     y = (y + viewport_pos[1] - CURSOR_OFFSET_Y) * viewport_scale;
-    main_editor.cursor_y = (size_t)(y / line_height);
-    if (main_editor.cursor_y >= main_editor.num_lines)
-        main_editor.cursor_y = main_editor.num_lines - 1;
-    else if (y / line_height < 0)
-        main_editor.cursor_y = 0;
+    pos_to_cursor_xy(x, y, &main_editor, &main_editor.selection_start);
+    main_editor.cursor = main_editor.selection_start;
 
-    if (x <= 0) {
-        main_editor.cursor_x = 0;
-    } else {
-        // TODO: replace with binary search, although improvement would be insignificant
-        float render_length = 0;
-        bool rendered = false;
-        for (size_t i = main_editor.lines[main_editor.cursor_y].start; i < main_editor.lines[main_editor.cursor_y + 1].start; i++) {
-            FT_Long prevhalf = char_params[(size_t)main_editor.text[i]].advance_x / 2;
-            FT_Long nexthalf = char_params[(size_t)main_editor.text[i]].advance_x - prevhalf;
-            render_length += prevhalf;
-            if (render_length >= x) {
-                main_editor.cursor_x = i -  main_editor.lines[main_editor.cursor_y].start;
-                rendered = true;
-                break;
-            }
-            render_length += nexthalf;
-        }
-        if (!rendered) {
-            main_editor.cursor_x = main_editor.lines[main_editor.cursor_y + 1].start - main_editor.lines[main_editor.cursor_y].start - 1; 
-        }
-    }
-    adjust_screen_cursor(&main_editor);
+    adjust_screen_cursor(&main_editor, &main_editor.selection_start);
     layout_updated = true;
     struct timeval time;
     gettimeofday(&time, NULL);
+    mouse_pressed = true;
+
     time.tv_sec -= start_sec;
     last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
 }
@@ -506,8 +794,43 @@ void handle_mouse_up (
     GdkEventSequence* sequence,
     gpointer user_data
 ) {
-
+    (void)self;
     (void)user_data;
-    double x, y;
-    gtk_gesture_get_point(self, sequence, &x, &y);
+    (void)sequence;
+
+    mouse_pressed = false;
+    layout_updated = true;
+    struct timeval time;
+    gettimeofday(&time, NULL);
+
+    time.tv_sec -= start_sec;
+    last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
+}
+
+void handle_mouse_move(
+    GtkEventControllerMotion* self,
+    gdouble x,
+    gdouble y,
+    gpointer user_data
+) {
+    (void)self;
+    (void)user_data;
+
+    if (!mouse_pressed) return;
+
+    x = (x + viewport_pos[0]) * viewport_scale;
+    y = (y + viewport_pos[1] - CURSOR_OFFSET_Y) * viewport_scale;
+
+    pos_to_cursor_xy(x, y, &main_editor, &main_editor.cursor);
+    if (get_selection_size(&main_editor)) {
+        main_editor.mode = Selection;
+    } else {
+        main_editor.mode = Normal;
+    }
+    layout_updated = true;
+    struct timeval time;
+    gettimeofday(&time, NULL);
+
+    time.tv_sec -= start_sec;
+    last_edit = (float)time.tv_usec / 1000000 + time.tv_sec;
 }

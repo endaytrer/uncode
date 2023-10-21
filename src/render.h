@@ -3,32 +3,29 @@
 #include <gtk/gtk.h>
 #include <sys/time.h>
 
-#define CHAR_CAPACITY 65536
+#define MAX_CHARS 65536
+#define MAX_OVERCHARS 4096
 #define MAX_CURSORS 1
+#define MAX_RECTS 256
 
 #define EPS 0.001f
 #define DRAG 0.90f
 #define SCROLL_SPEED 300
 
-typedef struct {
-    float pos[2];
-    float size[2];
-    float uv_offset_x;
-    float uv_size[2];
-    float fg_color[3];
-} Glyph;
+#include "renderables.h"
 
-typedef struct {
-    float pos[2];
-} Cursor;
+extern Glyph chars[MAX_CHARS];
+extern size_t num_chars;
 
-extern Glyph calculated_characters[CHAR_CAPACITY];
-extern size_t calculated_character_size;
+// char above rectangles
+extern Glyph overchars[MAX_OVERCHARS];
+extern size_t num_overchars;
 
-extern Cursor cursors[MAX_CURSORS];
-extern size_t num_cursors;
+extern Rect rects[MAX_RECTS];
+extern size_t num_rects;
+
 extern float cursor_size[2];
-extern float cursor_color[3];
+extern float cursor_color[4];
 // TODO: multiple cursor support
 
 
