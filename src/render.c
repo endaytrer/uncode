@@ -196,12 +196,12 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
     glClear(GL_COLOR_BUFFER_BIT);
 
 
-    if (calculated_character_size > 0) {
+    if (num_chars > 0) {
         glUseProgram(text_program);
         glBindVertexArray(text_vao);
 
         glBindBuffer(GL_ARRAY_BUFFER, text_vbo);
-        glBufferData(GL_ARRAY_BUFFER, calculated_character_size * sizeof(Glyph), calculated_characters, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, num_chars * sizeof(Glyph), chars, GL_DYNAMIC_DRAW);
 
         FILL_ATTR_GLYPH();
 
@@ -222,7 +222,7 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
         GLuint uniformFont = glGetUniformLocation(text_program, "font");
         glUniform1i(uniformFont, FONT_TEXTURE - GL_TEXTURE0);
 
-        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, calculated_character_size);
+        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_chars);
     }
     
     // draw rects
@@ -249,6 +249,34 @@ gboolean render(GtkGLArea *area, GdkGLContext *context) {
         glUniform1i(uniformViewportScale, viewport_scale);
 
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_rects);
+    }
+    if (num_overchars > 0) {
+        glUseProgram(text_program);
+        glBindVertexArray(text_vao);
+
+        glBindBuffer(GL_ARRAY_BUFFER, text_vbo);
+        glBufferData(GL_ARRAY_BUFFER, num_overchars * sizeof(Glyph), overchars, GL_DYNAMIC_DRAW);
+
+        FILL_ATTR_GLYPH();
+
+        // uniforms
+        GLint uniformTime = glGetUniformLocation(text_program, "time");
+        glUniform1f(uniformTime, (float)time.tv_usec / 1000000 + time.tv_sec);
+
+        GLint uniformResolution = glGetUniformLocation(text_program, "viewport_size");
+        glUniform2f(uniformResolution, viewport_size[0], viewport_size[1]);
+
+        GLint uniformViewportPos = glGetUniformLocation(text_program, "viewport_pos");
+        glUniform2f(uniformViewportPos, viewport_pos[0], viewport_pos[1]);
+
+        GLint uniformViewportScale = glGetUniformLocation(text_program, "viewport_scale");
+        glUniform1i(uniformViewportScale, viewport_scale);
+
+        glBindTexture(GL_TEXTURE_2D, font_tex);
+        GLuint uniformFont = glGetUniformLocation(text_program, "font");
+        glUniform1i(uniformFont, FONT_TEXTURE - GL_TEXTURE0);
+
+        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, num_overchars);
     }
 
     glFlush();

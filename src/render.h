@@ -3,9 +3,10 @@
 #include <gtk/gtk.h>
 #include <sys/time.h>
 
-#define CHAR_CAPACITY 65536
+#define MAX_CHARS 65536
+#define MAX_OVERCHARS 4096
 #define MAX_CURSORS 1
-#define MAX_RECTS 1024
+#define MAX_RECTS 256
 
 #define EPS 0.001f
 #define DRAG 0.90f
@@ -13,9 +14,12 @@
 
 #include "renderables.h"
 
-extern Glyph calculated_characters[CHAR_CAPACITY];
-extern size_t calculated_character_size;
+extern Glyph chars[MAX_CHARS];
+extern size_t num_chars;
 
+// char above rectangles
+extern Glyph overchars[MAX_OVERCHARS];
+extern size_t num_overchars;
 
 extern Rect rects[MAX_RECTS];
 extern size_t num_rects;
