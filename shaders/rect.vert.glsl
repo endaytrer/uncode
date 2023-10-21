@@ -1,4 +1,5 @@
 #version 310 es
+precision highp float;
 
 layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 size;
@@ -21,8 +22,8 @@ void main() {
     }
     
     gl_Position = vec4(
-        2.0 * (vert_position.x - viewport_pos.x * viewport_scale) / (viewport_size.x * viewport_scale) - 1.0,
-        1.0 - 2.0 * (vert_position.y - viewport_pos.y * viewport_scale) / (viewport_size.y * viewport_scale),
+        2.0 * (vert_position.x - viewport_pos.x * float(viewport_scale)) / (viewport_size.x * float(viewport_scale)) - 1.0,
+        1.0 - 2.0 * (vert_position.y - viewport_pos.y * float(viewport_scale)) / (viewport_size.y * float(viewport_scale)),
         0.0,
         1.0
     );

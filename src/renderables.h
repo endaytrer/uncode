@@ -107,9 +107,6 @@ do {\
     glVertexAttribDivisor(2, 1); \
 } while (0)
 
-extern unsigned char shaders_glyph_frag_glsl[];
-extern unsigned int shaders_glyph_frag_glsl_len;
-
 extern unsigned char shaders_glyph_vert_glsl[];
 extern unsigned int shaders_glyph_vert_glsl_len;
 
@@ -118,6 +115,9 @@ extern unsigned int shaders_rect_vert_glsl_len;
 
 extern unsigned char shaders_rect_frag_glsl[];
 extern unsigned int shaders_rect_frag_glsl_len;
+
+extern unsigned char shaders_glyph_frag_glsl[];
+extern unsigned int shaders_glyph_frag_glsl_len;
 
 
 #endif // _RENDERABLES_H
